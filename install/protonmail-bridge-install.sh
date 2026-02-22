@@ -15,7 +15,7 @@ update_os
 
 msg_info "Installing dependencies"
 $STD apt-get install -y \
-  gpg \
+  gnupg \
   pass \
   socat
 msg_ok "Installed dependencies"
@@ -142,22 +142,24 @@ if [[ -f "$MARKER" ]]; then
   exit 0
 fi
 
+systemctl stop protonmail-bridge.service 2>/dev/null || true
+
 echo "Initializing pass keychain for ${BRIDGE_USER} (required by Proton Mail Bridge on Linux)."
 
 # 1) Create a no-passphrase GPG key for pass (headless-friendly)
-if runuser -u "$BRIDGE_USER" gpg --list-secret-keys >/dev/null 2>&1; then
+if runuser -u "$BRIDGE_USER" -- gpg --list-secret-keys >/dev/null 2>&1; then
   echo "Existing GPG key found for ${BRIDGE_USER}, reusing it."
 else
-  runuser -u "$BRIDGE_USER" gpg --batch --passphrase '' --quick-gen-key 'ProtonMail Bridge' default default never
+  runuser -u "$BRIDGE_USER" -- gpg --batch --passphrase '' --quick-gen-key 'ProtonMail Bridge' default default never
 fi
 
 # 2) Find fingerprint and init pass store
-FPR="$(runuser -u "$BRIDGE_USER" gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '/^fpr:/ {print $10; exit}')"
+FPR="$(runuser -u "$BRIDGE_USER" -- gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '/^fpr:/ {print $10; exit}')"
 if [[ -z "${FPR}" ]]; then
   echo "Failed to detect GPG key fingerprint for ${BRIDGE_USER}." >&2
   exit 1
 fi
-runuser -u "$BRIDGE_USER" pass init "$FPR"
+runuser -u "$BRIDGE_USER" -- pass init "$FPR"
 
 echo
 echo "Starting Proton Mail Bridge CLI for one-time login. Run:"
@@ -165,11 +167,12 @@ echo "  login"
 echo "  info"
 echo "  exit"
 echo
-runuser -u "$BRIDGE_USER" protonmail-bridge -c
+runuser -u "$BRIDGE_USER" -- protonmail-bridge -c
 
 # Mark initialized and start services
 touch "$MARKER"
 chown "${BRIDGE_USER}:${BRIDGE_USER}" "$MARKER"
+chmod 0644 "$MARKER"
 
 systemctl daemon-reload
 systemctl enable --now protonmail-bridge.service protonmail-bridge-imap-forward.service protonmail-bridge-smtp-forward.service
@@ -184,7 +187,7 @@ set -e
 
 systemctl stop protonmail-bridge-imap-forward.service protonmail-bridge-smtp-forward.service protonmail-bridge.service 2>/dev/null || true
 
-runuser -u protonbridge protonmail-bridge -c
+runuser -u protonbridge -- protonmail-bridge -c
 
 systemctl daemon-reload
 systemctl enable --now protonmail-bridge.service protonmail-bridge-imap-forward.service protonmail-bridge-smtp-forward.service
