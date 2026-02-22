@@ -18,11 +18,6 @@ var_unprivileged="1"
 
 header_info "$APP"
 variables
-
-# Force verbose mode for this run (must be after variables(), which can overwrite VERBOSE)
-VERBOSE="yes"
-set_std_mode
-
 color
 catch_errors
 
