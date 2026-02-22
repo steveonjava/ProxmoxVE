@@ -7,7 +7,7 @@
 
 source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/build.func)
 
-APP="ProtonMail Bridge"
+APP="ProtonMail-Bridge"
 var_tags="${var_tags:-mail;proton}"
 var_cpu="${var_cpu:-1}"
 var_ram="${var_ram:-512}"
