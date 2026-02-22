@@ -46,6 +46,7 @@ function update_script() {
 
 start
 build_container
+description
 
 msg_ok "Completed successfully!"
 echo -e "${CREATING}${GN}${APP} has been successfully installed!${CL}"
