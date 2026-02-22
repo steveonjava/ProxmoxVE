@@ -1,19 +1,19 @@
 {
-  "name": "ProtonMail Bridge (Headless)",
+  "name": "Proton Mail Bridge",
   "slug": "protonmail-bridge",
   "categories": [
-    11
+    18
   ],
-  "date_created": "2026-02-21",
+  "date_created": "2026-02-22",
   "type": "ct",
   "updateable": true,
   "privileged": false,
   "interface_port": null,
   "documentation": "https://proton.me/support/bridge-cli-guide",
   "website": "https://proton.me/mail/bridge",
-  "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/linux.webp",
-  "config_path": "/home/protonbridge/.config/protonmail/bridge-v3",
-  "description": "Runs Proton Mail Bridge in headless (CLI) mode inside an LXC, and exposes IMAP and SMTP to other VMs/hosts on your LAN using socat port forwarding. Intended for homelab mail syncing where clients cannot run the Bridge locally.",
+  "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/protonmail.webp",
+  "config_path": "",
+  "description": "Proton Mail Bridge runs a local IMAP/SMTP service that lets traditional mail clients access a Proton mailbox. This LXC runs Bridge headless and forwards IMAP/SMTP to the LAN via systemd + socat.",
   "install_methods": [
     {
       "type": "default",
@@ -23,7 +23,7 @@
         "ram": 512,
         "hdd": 8,
         "os": "debian",
-        "version": "12"
+        "version": "13"
       }
     }
   ],
@@ -33,16 +33,16 @@
   },
   "notes": [
     {
-      "text": "One-time setup (inside the container): sudo -u protonbridge protonmail-bridge -c, then run `login` and `info` to retrieve per-client IMAP/SMTP credentials.",
+      "text": "After install, run protonmailbridge-init inside the container to create a pass keychain and log in via the Bridge CLI.",
       "type": "info"
     },
     {
-      "text": "LAN ports exposed by this script: IMAP on 143 forwards to Bridge 127.0.0.1:1143, SMTP on 587 forwards to Bridge 127.0.0.1:1025.",
+      "text": "LAN forwarding (container IP): IMAP 143 -> 127.0.0.1:1143, SMTP 587 -> 127.0.0.1:1025.",
       "type": "info"
     },
     {
-      "text": "Security: This exposes your Bridge endpoints to the network. Restrict access using Proxmox firewall rules or a trusted VLAN.",
-      "type": "warning"
+      "text": "Use protonmailbridge-configure to temporarily stop the service and enter the Bridge CLI without running a second instance.",
+      "type": "info"
     }
   ]
 }

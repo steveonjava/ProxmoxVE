@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Copyright (c) 2021-2026 community-scripts
+# Copyright (c) 2021-2026 community-scripts ORG
 # Author: Stephen Chin
-# License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
+# License: MIT | https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
 # Source: https://github.com/ProtonMail/proton-bridge
 # Description: Debian LXC that runs Proton Mail Bridge headless and exposes IMAP/SMTP to the LAN via socat.
 
@@ -18,8 +18,6 @@ var_unprivileged="${var_unprivileged:-1}"
 
 header_info "$APP"
 variables
-echo "DEBUG: APP=$APP NSAPP=$NSAPP var_install=$var_install"
-echo "DEBUG: installer URL=https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/install/${var_install}.sh"
 color
 catch_errors
 
@@ -29,20 +27,34 @@ function update_script() {
   check_container_resources
 
   if [[ ! -x /usr/bin/protonmail-bridge ]]; then
-    msg_error "No ${APP} installation found."
-    exit 1
+    msg_error "No ${APP} Installation Found!"
+    exit
   fi
 
-  # Delegate update logic to the in-container updater placed by the install script
-  msg_info "Running in-container updater"
-  if [[ -x /usr/bin/update ]]; then
-    /usr/bin/update
-    msg_ok "Update complete"
+  if ! check_for_gh_release "protonmail-bridge" "ProtonMail/proton-bridge"; then
+    msg_ok "No update available."
+    exit
+  fi
+
+  msg_info "Stopping Services"
+  systemctl stop protonmail-bridge-imap-forward.service protonmail-bridge-smtp-forward.service protonmail-bridge.service 2>/dev/null || true
+  msg_ok "Stopped Services"
+
+  msg_info "Updating ${APP}"
+  fetch_and_deploy_gh_release "protonmail-bridge" "ProtonMail/proton-bridge" "binary" "latest" "/tmp"
+  msg_ok "Updated ${APP}"
+
+  systemctl daemon-reload
+
+  if [[ -f /home/protonbridge/.protonmailbridge-initialized ]]; then
+    msg_info "Starting Services"
+    systemctl enable -q --now protonmail-bridge.service protonmail-bridge-imap-forward.service protonmail-bridge-smtp-forward.service
+    msg_ok "Started Services"
   else
-    msg_error "Updater not found at /usr/bin/update"
-    exit 1
+    msg_ok "Initialization not completed. Services remain disabled."
   fi
 
+  msg_ok "Updated successfully!"
   exit
 }
 
@@ -50,19 +62,16 @@ start
 build_container
 description
 
-msg_ok "Completed successfully!"
+msg_ok "Completed successfully!\n"
 echo -e "${CREATING}${GN}${APP} has been successfully installed!${CL}"
-echo -e "${INFO}${YW}Bridge listens on localhost (container):${CL}"
-echo -e "${TAB}${YW}IMAP 127.0.0.1:1143${CL}"
-echo -e "${TAB}${YW}SMTP 127.0.0.1:1025${CL}"
+echo -e "${INFO}${YW}One-time initialization is required before Bridge services are enabled.${CL}"
+echo -e "${INFO}${YW}Initialize the account inside the container:${CL}"
+echo -e "${TAB}${YW}protonmailbridge-init${CL}"
+echo -e "${INFO}${YW}After initial configuration, use this to access the Bridge CLI:${CL}"
+echo -e "${TAB}${YW}protonmailbridge-configure${CL}"
 echo -e "${INFO}${YW}LAN-accessible forwarded ports (container IP ${IP}):${CL}"
 echo -e "${TAB}${GATEWAY}${BGN}IMAP  ${IP}:143${CL}"
 echo -e "${TAB}${GATEWAY}${BGN}SMTP  ${IP}:587${CL}"
-echo -e "${INFO}${YW}Next step (one-time): initialize and login interactively:${CL}"
-echo -e "${TAB}${YW}/usr/local/bin/protonmailbridge-init${CL}"
-echo -e "${INFO}${YW}After initialization completes, services will be enabled and started automatically.${CL}"
-echo -e "${INFO}${YW}LAN ports exposed by socat:${CL}"
-echo -e "${TAB}${YW}IMAP 143  -> 127.0.0.1:1143${CL}"
-echo -e "${TAB}${YW}SMTP 587  -> 127.0.0.1:1025${CL}"
-echo -e "${INFO}${YW}After initial configuration, use this to access the Bridge CLI:${CL}"
-echo -e "${TAB}${YW}/usr/local/bin/protonmailbridge-configure${CL}"
+echo -e "${INFO}${YW}Forwarding targets inside the container (Bridge defaults):${CL}"
+echo -e "${TAB}${YW}IMAP 127.0.0.1:1143${CL}"
+echo -e "${TAB}${YW}SMTP 127.0.0.1:1025${CL}"
