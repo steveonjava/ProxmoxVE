@@ -5,6 +5,8 @@
 # Source: https://github.com/ProtonMail/proton-bridge
 # Description: Debian LXC that runs Proton Mail Bridge headless and exposes IMAP/SMTP to the LAN via socat.
 
+export VERBOSE=yes
+
 source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
 
 APP="Proton Mail Bridge"
