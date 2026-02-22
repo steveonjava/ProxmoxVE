@@ -116,12 +116,55 @@ echo "Proton Mail Bridge updated successfully."
 EOF
 chmod +x /usr/bin/update
 
-systemctl daemon-reload
-systemctl enable --now protonmail-bridge.service
-systemctl enable --now protonmail-bridge-smtp-forward.service
-systemctl enable --now protonmail-bridge-imap-forward.service
+cat > /usr/local/bin/protonmailbridge-init <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
 
-msg_ok "Created and enabled services"
+BRIDGE_USER="protonbridge"
+MARKER="/home/${BRIDGE_USER}/.protonmailbridge-initialized"
+
+if [[ -f "$MARKER" ]]; then
+  echo "Already initialized. To start services:"
+  echo "  systemctl enable --now protonmail-bridge.service protonmail-bridge-imap-forward.service protonmail-bridge-smtp-forward.service"
+  exit 0
+fi
+
+echo "Initializing pass keychain for ${BRIDGE_USER} (required by Proton Mail Bridge on Linux)."
+
+# 1) Create a no-passphrase GPG key for pass (headless-friendly)
+sudo -u "$BRIDGE_USER" gpg --batch --passphrase '' --quick-gen-key 'ProtonMail Bridge' default default never
+
+# 2) Find fingerprint and init pass store
+FPR="$(sudo -u "$BRIDGE_USER" gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '/^fpr:/ {print $10; exit}')"
+if [[ -z "${FPR}" ]]; then
+  echo "Failed to detect GPG key fingerprint for ${BRIDGE_USER}." >&2
+  exit 1
+fi
+sudo -u "$BRIDGE_USER" pass init "$FPR"
+
+echo
+echo "Starting Proton Mail Bridge CLI for one-time login. Run:"
+echo "  login"
+echo "  info"
+echo "  exit"
+echo
+sudo -u "$BRIDGE_USER" protonmail-bridge -c
+
+# Mark initialized and start services
+touch "$MARKER"
+chown "${BRIDGE_USER}:${BRIDGE_USER}" "$MARKER"
+
+systemctl daemon-reload
+systemctl enable --now protonmail-bridge.service protonmail-bridge-imap-forward.service protonmail-bridge-smtp-forward.service
+
+echo "Initialization complete. Services enabled and started."
+EOF
+chmod +x /usr/local/bin/protonmailbridge-init
+
+systemctl daemon-reload
+systemctl disable --now protonmail-bridge.service protonmail-bridge-smtp-forward.service protonmail-bridge-imap-forward.service 2>/dev/null || true
+
+msg_ok "Created and temporarily disabled services"
 
 motd_ssh
 customize
@@ -129,13 +172,3 @@ customize
 msg_info "Cleanup"
 cleanup_lxc
 msg_ok "Cleanup complete"
-
-echo
-echo "Next step (one-time): initialize Proton Mail Bridge account"
-echo "  sudo -u protonbridge protonmail-bridge -c"
-echo "Then run: login"
-echo "Then run: info   (to get IMAP/SMTP username and password for your clients)"
-echo
-echo "LAN ports exposed by socat:"
-echo "  IMAP: 143  -> 127.0.0.1:1143"
-echo "  SMTP: 587  -> 127.0.0.1:1025"
