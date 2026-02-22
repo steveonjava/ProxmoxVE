@@ -7,7 +7,7 @@
 
 source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/build.func)
 
-APP="Proton Mail Bridge"
+APP="ProtonMail Bridge"
 var_tags="${var_tags:-mail;proton}"
 var_cpu="${var_cpu:-1}"
 var_ram="${var_ram:-512}"
@@ -18,6 +18,8 @@ var_unprivileged="${var_unprivileged:-1}"
 
 header_info "$APP"
 variables
+echo "DEBUG: APP=$APP NSAPP=$NSAPP var_install=$var_install"
+echo "DEBUG: installer URL=https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/install/${var_install}.sh"
 color
 catch_errors
 
