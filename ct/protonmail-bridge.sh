@@ -64,3 +64,5 @@ echo -e "${INFO}${YW}After initialization completes, services will be enabled an
 echo -e "${INFO}${YW}LAN ports exposed by socat:${CL}"
 echo -e "${TAB}${YW}IMAP 143  -> 127.0.0.1:1143${CL}"
 echo -e "${TAB}${YW}SMTP 587  -> 127.0.0.1:1025${CL}"
+echo -e "${INFO}${YW}After initial configuration, use this to access the Bridge CLI:${CL}"
+echo -e "${TAB}${YW}/usr/local/bin/protonmailbridge-configure${CL}"

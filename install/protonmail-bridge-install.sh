@@ -15,13 +15,9 @@ update_os
 
 msg_info "Installing dependencies"
 $STD apt-get install -y \
-  ca-certificates \
   gpg \
-  jq \
-  libsecret-1-0 \
   pass \
-  socat \
-  sudo
+  socat
 msg_ok "Installed dependencies"
 
 # Create a dedicated user for the bridge
@@ -40,14 +36,16 @@ msg_ok "Installed Proton Mail Bridge"
 INSTALLED_VER="$(/usr/bin/protonmail-bridge --version 2>/dev/null | head -n 1 | tr -d '\r' || true)"
 echo "${INSTALLED_VER}" > /opt/.protonmailbridge-version
 
-# Service: Proton Mail Bridge CLI, kept alive with FIFO trick like the Docker entrypoint
 msg_info "Creating systemd services"
 
 cat > /etc/systemd/system/protonmail-bridge.service <<'EOF'
 [Unit]
-Description=Proton Mail Bridge (Headless CLI)
+Description=Proton Mail Bridge (noninteractive)
 After=network-online.target
 Wants=network-online.target
+
+# Prevent start until init/login has been completed
+ConditionPathExists=/home/protonbridge/.protonmailbridge-initialized
 
 [Service]
 Type=simple
@@ -55,11 +53,20 @@ User=protonbridge
 Group=protonbridge
 WorkingDirectory=/home/protonbridge
 Environment=HOME=/home/protonbridge
-RuntimeDirectory=protonmail-bridge
-RuntimeDirectoryMode=0750
-ExecStart=/bin/bash -lc 'rm -f /run/protonmail-bridge/faketty; mkfifo /run/protonmail-bridge/faketty; cat /run/protonmail-bridge/faketty | /usr/bin/protonmail-bridge -c'
+
+# Runs Bridge as a background daemon (no interactive stdin required)
+ExecStart=/usr/bin/protonmail-bridge --noninteractive
+
 Restart=always
 RestartSec=3
+
+# Reasonable hardening without breaking access to the user's home/config
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
 
 [Install]
 WantedBy=multi-user.target
@@ -70,7 +77,10 @@ cat > /etc/systemd/system/protonmail-bridge-smtp-forward.service <<'EOF'
 [Unit]
 Description=Proton Mail Bridge SMTP Forward (587 -> 127.0.0.1:1025)
 After=protonmail-bridge.service
-Wants=protonmail-bridge.service
+Requires=protonmail-bridge.service
+
+# Prevent start until init/login has been completed
+ConditionPathExists=/home/protonbridge/.protonmailbridge-initialized
 
 [Service]
 Type=simple
@@ -87,7 +97,10 @@ cat > /etc/systemd/system/protonmail-bridge-imap-forward.service <<'EOF'
 [Unit]
 Description=Proton Mail Bridge IMAP Forward (143 -> 127.0.0.1:1143)
 After=protonmail-bridge.service
-Wants=protonmail-bridge.service
+Requires=protonmail-bridge.service
+
+# Prevent start until init/login has been completed
+ConditionPathExists=/home/protonbridge/.protonmailbridge-initialized
 
 [Service]
 Type=simple
@@ -132,15 +145,19 @@ fi
 echo "Initializing pass keychain for ${BRIDGE_USER} (required by Proton Mail Bridge on Linux)."
 
 # 1) Create a no-passphrase GPG key for pass (headless-friendly)
-sudo -u "$BRIDGE_USER" gpg --batch --passphrase '' --quick-gen-key 'ProtonMail Bridge' default default never
+if runuser -u "$BRIDGE_USER" gpg --list-secret-keys >/dev/null 2>&1; then
+  echo "Existing GPG key found for ${BRIDGE_USER}, reusing it."
+else
+  runuser -u "$BRIDGE_USER" gpg --batch --passphrase '' --quick-gen-key 'ProtonMail Bridge' default default never
+fi
 
 # 2) Find fingerprint and init pass store
-FPR="$(sudo -u "$BRIDGE_USER" gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '/^fpr:/ {print $10; exit}')"
+FPR="$(runuser -u "$BRIDGE_USER" gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '/^fpr:/ {print $10; exit}')"
 if [[ -z "${FPR}" ]]; then
   echo "Failed to detect GPG key fingerprint for ${BRIDGE_USER}." >&2
   exit 1
 fi
-sudo -u "$BRIDGE_USER" pass init "$FPR"
+runuser -u "$BRIDGE_USER" pass init "$FPR"
 
 echo
 echo "Starting Proton Mail Bridge CLI for one-time login. Run:"
@@ -148,7 +165,7 @@ echo "  login"
 echo "  info"
 echo "  exit"
 echo
-sudo -u "$BRIDGE_USER" protonmail-bridge -c
+runuser -u "$BRIDGE_USER" protonmail-bridge -c
 
 # Mark initialized and start services
 touch "$MARKER"
@@ -160,6 +177,19 @@ systemctl enable --now protonmail-bridge.service protonmail-bridge-imap-forward.
 echo "Initialization complete. Services enabled and started."
 EOF
 chmod +x /usr/local/bin/protonmailbridge-init
+
+cat > /usr/local/bin/protonmailbridge-configure <<'EOF'
+#!/usr/bin/env bash
+set -e
+
+systemctl stop protonmail-bridge-imap-forward.service protonmail-bridge-smtp-forward.service protonmail-bridge.service 2>/dev/null || true
+
+runuser -u protonbridge protonmail-bridge -c
+
+systemctl daemon-reload
+systemctl enable --now protonmail-bridge.service protonmail-bridge-imap-forward.service protonmail-bridge-smtp-forward.service
+EOF
+chmod +x /usr/local/bin/protonmailbridge-configure
 
 systemctl daemon-reload
 systemctl disable --now protonmail-bridge.service protonmail-bridge-smtp-forward.service protonmail-bridge-imap-forward.service 2>/dev/null || true
