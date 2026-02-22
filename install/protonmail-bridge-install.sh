@@ -5,7 +5,7 @@
 # Source: https://github.com/ProtonMail/proton-bridge
 # Description: Installs Proton Mail Bridge, creates systemd services, and exposes IMAP/SMTP via socat.
 
-VERBOSE=yes
+export VERBOSE=yes
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
 color
