@@ -7,5 +7,9 @@
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
         "source.fixAll": "explicit"
+    },
+    "chat.tools.terminal.autoApprove": {
+        "git commit": true,
+        "git push": true
     }
 }

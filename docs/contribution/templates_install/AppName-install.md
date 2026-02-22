@@ -44,7 +44,7 @@
 
 ```bash
 #!/usr/bin/env bash
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/install.func)
+source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/install.func)
 # (setup-fork.sh modifies this URL to point to YOUR fork during development)
 ```
 
@@ -177,9 +177,9 @@ npm install --no-save
 
 See working examples:
 
-- [Trip](https://github.com/community-scripts/ProxmoxVE/blob/main/install/trip-install.sh)
-- [Thingsboard](https://github.com/community-scripts/ProxmoxVE/blob/main/install/thingsboard-install.sh)
-- [UniFi](https://github.com/community-scripts/ProxmoxVE/blob/main/install/unifi-install.sh)
+- [Trip](https://github.com/steveonjava/ProxmoxVE/blob/main/install/trip-install.sh)
+- [Thingsboard](https://github.com/steveonjava/ProxmoxVE/blob/main/install/thingsboard-install.sh)
+- [UniFi](https://github.com/steveonjava/ProxmoxVE/blob/main/install/unifi-install.sh)
 
 ---
 
@@ -200,7 +200,7 @@ Example:
 ```bash
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: [YourUserName]
-# License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
+# License: MIT | https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
 # Source: [SOURCE_URL]
 ```
 

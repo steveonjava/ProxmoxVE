@@ -2,7 +2,7 @@
 
 # Copyright (c) 2021-2026 tteck
 # Author: tteck (tteckster) | MickLesk (CanbiZ)
-# License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
+# License: MIT | https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
 
 function header_info {
   clear
@@ -31,7 +31,7 @@ function msg_ok() { echo -e "${CM} ${GN}$1${CL}"; }
 function msg_error() { echo -e "${CROSS} ${RD}$1${CL}"; }
 
 # Telemetry
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/api.func) 2>/dev/null || true
+source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/api.func) 2>/dev/null || true
 declare -f init_tool_telemetry &>/dev/null && init_tool_telemetry "glances" "addon"
 
 get_lxc_ip() {
@@ -52,7 +52,7 @@ install_glances_debian() {
   msg_ok "Installed dependencies"
 
   msg_info "Setting up Python + uv"
-  source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/tools.func)
+  source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/tools.func)
   setup_uv PYTHON_VERSION="3.12"
   msg_ok "Setup Python + uv"
 
@@ -122,7 +122,7 @@ install_glances_alpine() {
   msg_ok "Installed dependencies"
 
   msg_info "Setting up Python + uv"
-  source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/tools.func)
+  source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/tools.func)
   setup_uv PYTHON_VERSION="3.12"
   msg_ok "Setup Python + uv"
 

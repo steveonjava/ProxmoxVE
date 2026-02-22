@@ -33,7 +33,7 @@
   },
   "notes": [
     {
-      "text": "For required post installation actions, checkout: `https://github.com/community-scripts/ProxmoxVE/discussions/11352`",
+      "text": "For required post installation actions, checkout: `https://github.com/steveonjava/ProxmoxVE/discussions/11352`",
       "type": "info"
     }
   ]

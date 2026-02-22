@@ -33,7 +33,7 @@
   },
   "notes": [
     {
-      "text": "Once the script finishes, proceed with the OS installation via the console. For more details, please refer to this discussion: `https://github.com/community-scripts/ProxmoxVE/discussions/11344`",
+      "text": "Once the script finishes, proceed with the OS installation via the console. For more details, please refer to this discussion: `https://github.com/steveonjava/ProxmoxVE/discussions/11344`",
       "type": "info"
     }
   ]

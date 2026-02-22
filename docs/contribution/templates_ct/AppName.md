@@ -62,7 +62,7 @@ The modern template includes:
 
 ```bash
 #!/usr/bin/env bash
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
+source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/build.func)
 # (Note: setup-fork.sh changes this URL to point to YOUR fork during development)
 ```
 
@@ -160,9 +160,9 @@ See the [modern template](AppName.sh) and [AI.md](../AI.md) for complete working
 
 Recent reference scripts with good update functions:
 
-- [Trip](https://github.com/community-scripts/ProxmoxVE/blob/main/ct/trip.sh)
-- [Thingsboard](https://github.com/community-scripts/ProxmoxVE/blob/main/ct/thingsboard.sh)
-- [UniFi](https://github.com/community-scripts/ProxmoxVE/blob/main/ct/unifi.sh)
+- [Trip](https://github.com/steveonjava/ProxmoxVE/blob/main/ct/trip.sh)
+- [Thingsboard](https://github.com/steveonjava/ProxmoxVE/blob/main/ct/thingsboard.sh)
+- [UniFi](https://github.com/steveonjava/ProxmoxVE/blob/main/ct/unifi.sh)
 
 ---
 

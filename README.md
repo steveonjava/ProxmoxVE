@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/images/logo-81x112.png" height="120px" alt="Proxmox VE Helper-Scripts Logo" />
+  <img src="https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/images/logo-81x112.png" height="120px" alt="Proxmox VE Helper-Scripts Logo" />
   
   <h1>Proxmox VE Helper-Scripts</h1>
   <p><em>A Community Legacy in Memory of @tteck</em></p>
@@ -17,13 +17,13 @@
   </p>
 
   <p>
-    <a href="https://github.com/community-scripts/ProxmoxVE/blob/main/docs/contribution/README.md">
+    <a href="https://github.com/steveonjava/ProxmoxVE/blob/main/docs/contribution/README.md">
       <img src="https://img.shields.io/badge/🤝_Contribute-Guidelines-ff4785?style=for-the-badge&labelColor=2d3748" alt="Contribute" />
     </a>
-    <a href="https://github.com/community-scripts/ProxmoxVE/blob/main/docs/contribution/USER_SUBMITTED_GUIDES.md">
+    <a href="https://github.com/steveonjava/ProxmoxVE/blob/main/docs/contribution/USER_SUBMITTED_GUIDES.md">
       <img src="https://img.shields.io/badge/📚_Guides-Read-0077b5?style=for-the-badge&labelColor=2d3748" alt="Guides" />
     </a>
-    <a href="https://github.com/community-scripts/ProxmoxVE/blob/main/CHANGELOG.md">
+    <a href="https://github.com/steveonjava/ProxmoxVE/blob/main/CHANGELOG.md">
       <img src="https://img.shields.io/badge/📋_Changelog-View-6c5ce7?style=for-the-badge&labelColor=2d3748" alt="Changelog" />
     </a>
   </p>
@@ -141,12 +141,12 @@ The fastest way to get started:
 Install a convenient script manager directly in your Proxmox UI:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/pve-scripts-local.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/ct/pve-scripts-local.sh)"
 ```
 
 This adds a menu to your Proxmox interface for easy script access without visiting the website.
 
-📖 **Learn more:** [ProxmoxVE-Local Repository](https://github.com/community-scripts/ProxmoxVE-Local)
+📖 **Learn more:** [ProxmoxVE-Local Repository](https://github.com/steveonjava/ProxmoxVE-Local)
 
 ---
 
@@ -166,14 +166,14 @@ This adds a menu to your Proxmox interface for easy script access without visiti
     <td align="center" width="33%">
       <h3>💭 Discussions</h3>
       <p>Feature requests, Q&A, and ideas</p>
-      <a href="https://github.com/community-scripts/ProxmoxVE/discussions">
+      <a href="https://github.com/steveonjava/ProxmoxVE/discussions">
         <img src="https://img.shields.io/badge/Discuss-238636?style=for-the-badge&logo=github&logoColor=white" alt="Discussions" />
       </a>
     </td>
     <td align="center" width="33%">
       <h3>🐛 Issues</h3>
       <p>Bug reports and issue tracking</p>
-      <a href="https://github.com/community-scripts/ProxmoxVE/issues">
+      <a href="https://github.com/steveonjava/ProxmoxVE/issues">
         <img src="https://img.shields.io/badge/Report-d73a4a?style=for-the-badge&logo=github&logoColor=white" alt="Issues" />
       </a>
     </td>
@@ -214,7 +214,7 @@ This adds a menu to your Proxmox interface for easy script access without visiti
 <div align="center">
   <br />
   
-  👉 Check our **[Contributing Guidelines](https://github.com/community-scripts/ProxmoxVE/blob/main/docs/contribution/README.md)** to get started
+  👉 Check our **[Contributing Guidelines](https://github.com/steveonjava/ProxmoxVE/blob/main/docs/contribution/README.md)** to get started
   
 </div>
 

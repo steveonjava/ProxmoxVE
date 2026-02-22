@@ -24,7 +24,7 @@ The `setup-fork.sh` script automatically:
 1. **Detects** your GitHub username from git config
 2. **Updates ALL hardcoded links** to point to your fork:
    - Documentation links pointing to `community-scripts/ProxmoxVE`
-   - **Curl download URLs** in scripts (e.g., `curl ... github.com/community-scripts/ProxmoxVE/main/...`)
+   - **Curl download URLs** in scripts (e.g., `curl ... github.com/steveonjava/ProxmoxVE/main/...`)
 3. **Creates** `.git-setup-info` with your configuration details
 4. **Backs up** all modified files (\*.backup for safety)
 
@@ -34,7 +34,7 @@ Your scripts contain `curl` commands that download dependencies from GitHub (bui
 
 ```bash
 # First line of ct/myapp.sh
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
+source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/build.func)
 ```
 
 **WITHOUT setup-fork.sh:**
@@ -54,7 +54,7 @@ source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxV
 # Example: What setup-fork.sh changes
 
 # BEFORE (points to upstream):
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
+source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/build.func)
 
 # AFTER (points to your fork):
 source <(curl -fsSL https://raw.githubusercontent.com/john/ProxmoxVE/main/misc/build.func)
@@ -136,7 +136,7 @@ The script updates hardcoded links in these areas when using `--full`:
 
 ```bash
 # Add upstream if you haven't already
-git remote add upstream https://github.com/community-scripts/ProxmoxVE.git
+git remote add upstream https://github.com/steveonjava/ProxmoxVE.git
 
 # Get latest from upstream
 git fetch upstream
