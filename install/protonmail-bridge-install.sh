@@ -6,6 +6,10 @@
 # Description: Installs Proton Mail Bridge, creates systemd services, and exposes IMAP/SMTP via socat.
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
+
+export VERBOSE="yes"
+set_std_mode
+
 color
 verb_ip6
 catch_errors
