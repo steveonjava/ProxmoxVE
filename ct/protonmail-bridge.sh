@@ -8,13 +8,13 @@
 source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
 
 APP="Proton Mail Bridge"
-var_tags="mail;proton;imap;smtp"
-var_cpu="1"
-var_ram="512"
-var_disk="8"
-var_os="debian"
-var_version="12"
-var_unprivileged="1"
+var_tags="${var_tags:-mail;proton}"
+var_cpu="${var_cpu:-1}"
+var_ram="${var_ram:-512}"
+var_disk="${var_disk:-8}"
+var_os="${var_os:-debian}"
+var_version="${var_version:-13}"
+var_unprivileged="${var_unprivileged:-1}"
 
 header_info "$APP"
 variables
@@ -22,7 +22,7 @@ color
 catch_errors
 
 function update_script() {
-  header_info "$APP Update"
+  header_info
   check_container_storage
   check_container_resources
 

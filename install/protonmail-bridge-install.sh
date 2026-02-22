@@ -6,9 +6,6 @@
 # Description: Installs Proton Mail Bridge, creates systemd services, and exposes IMAP/SMTP via socat.
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
-LOG="/var/log/protonmailbridge-install.log"
-exec > >(tee -a "$LOG") 2>&1
-
 color
 verb_ip6
 catch_errors
@@ -19,7 +16,6 @@ update_os
 msg_info "Installing dependencies"
 $STD apt-get install -y \
   ca-certificates \
-  curl \
   gpg \
   jq \
   libsecret-1-0 \
