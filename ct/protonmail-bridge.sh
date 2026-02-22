@@ -5,7 +5,7 @@
 # Source: https://github.com/ProtonMail/proton-bridge
 # Description: Debian LXC that runs Proton Mail Bridge headless and exposes IMAP/SMTP to the LAN via socat.
 
-source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/build.func)
+source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/refs/heads/main/misc/build.func)
 
 APP="ProtonMail Bridge"
 var_tags="${var_tags:-mail;proton}"
@@ -19,7 +19,7 @@ var_unprivileged="${var_unprivileged:-1}"
 header_info "$APP"
 variables
 echo "DEBUG: APP=$APP NSAPP=$NSAPP var_install=$var_install"
-echo "DEBUG: installer URL=https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/install/${var_install}.sh"
+echo "DEBUG: installer URL=https://raw.githubusercontent.com/steveonjava/ProxmoxVE/refs/heads/main/install/${var_install}.sh"
 color
 catch_errors
 
