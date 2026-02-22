@@ -155,10 +155,18 @@ fi
 
 # 2) Find fingerprint and init pass store
 FPR="$(runuser -u "$BRIDGE_USER" -- gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '/^fpr:/ {print $10; exit}')"
-if [[ -z "${FPR}" ]]; then
+
+# If none found, generate a key then try again
+if [[ -z "$FPR" ]]; then
+  runuser -u "$BRIDGE_USER" -- gpg --batch --pinentry-mode loopback --passphrase '' --quick-gen-key 'ProtonMail Bridge' default default never
+  FPR="$(runuser -u "$BRIDGE_USER" -- gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '/^fpr:/ {print $10; exit}')"
+fi
+
+if [[ -z "$FPR" ]]; then
   echo "Failed to detect GPG key fingerprint for ${BRIDGE_USER}." >&2
   exit 1
 fi
+
 runuser -u "$BRIDGE_USER" -- pass init "$FPR"
 
 echo
