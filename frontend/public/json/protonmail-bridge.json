@@ -1,7 +1,9 @@
 {
-  "name": "Proton Mail Bridge (Headless)",
+  "name": "ProtonMail Bridge (Headless)",
   "slug": "protonmail-bridge",
-  "categories": [11],
+  "categories": [
+    11
+  ],
   "date_created": "2026-02-21",
   "type": "ct",
   "updateable": true,
