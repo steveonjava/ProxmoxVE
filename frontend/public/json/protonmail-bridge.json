@@ -20,7 +20,7 @@
       "script": "ct/protonmail-bridge.sh",
       "resources": {
         "cpu": 1,
-        "ram": 512,
+        "ram": 256,
         "hdd": 8,
         "os": "debian",
         "version": "13"
