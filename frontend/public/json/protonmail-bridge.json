@@ -11,7 +11,7 @@
   "interface_port": null,
   "documentation": "https://proton.me/support/bridge-cli-guide",
   "website": "https://proton.me/mail/bridge",
-  "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/protonmail.webp",
+  "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/proton-mail.webp",
   "config_path": "",
   "description": "Proton Mail Bridge runs a local IMAP/SMTP service that lets traditional mail clients access a Proton mailbox. This LXC runs Bridge headless and forwards IMAP/SMTP to the LAN via systemd + socat.",
   "install_methods": [
