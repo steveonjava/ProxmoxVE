@@ -3,13 +3,13 @@
 # Author: Stephen Chin
 # License: MIT | https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
 # Source: https://github.com/ProtonMail/proton-bridge
-# Description: Debian LXC that runs Proton Mail Bridge headless and exposes IMAP/SMTP to the LAN via socat.
+# Description: Debian LXC that runs Proton Mail Bridge headless and exposes IMAP/SMTP to the LAN via systemd-socket-proxyd.
 
 source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/build.func)
 
 APP="ProtonMail-Bridge"
 var_tags="${var_tags:-mail;proton}"
-var_cpu="${var_cpu:-1}"
+var_cpu="${var_cpu:-2}"
 var_ram="${var_ram:-512}"
 var_disk="${var_disk:-8}"
 var_os="${var_os:-debian}"

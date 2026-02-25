@@ -19,8 +19,8 @@
       "type": "default",
       "script": "ct/protonmail-bridge.sh",
       "resources": {
-        "cpu": 1,
-        "ram": 256,
+        "cpu": 2,
+        "ram": 512,
         "hdd": 8,
         "os": "debian",
         "version": "13"
