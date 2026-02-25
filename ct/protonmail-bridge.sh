@@ -36,8 +36,10 @@ function update_script() {
     exit
   fi
 
+
   msg_info "Stopping Services"
-  systemctl stop protonmail-bridge-imap-forward.service protonmail-bridge-smtp-forward.service protonmail-bridge.service 2>/dev/null || true
+  systemctl stop protonmail-bridge-imap.socket protonmail-bridge-smtp.socket 2>/dev/null || true
+  systemctl stop protonmail-bridge-imap-proxy.service protonmail-bridge-smtp-proxy.service protonmail-bridge.service 2>/dev/null || true
   msg_ok "Stopped Services"
 
   msg_info "Updating ${APP}"
@@ -48,7 +50,9 @@ function update_script() {
 
   if [[ -f /home/protonbridge/.protonmailbridge-initialized ]]; then
     msg_info "Starting Services"
-    systemctl enable -q --now protonmail-bridge.service protonmail-bridge-imap-forward.service protonmail-bridge-smtp-forward.service
+    systemctl enable -q --now protonmail-bridge.service
+    systemctl enable -q --now protonmail-bridge-imap.socket protonmail-bridge-smtp.socket
+    systemctl start protonmail-bridge-imap-proxy.service protonmail-bridge-smtp-proxy.service
     msg_ok "Started Services"
   else
     msg_ok "Initialization not completed. Services remain disabled."
@@ -62,7 +66,7 @@ start
 build_container
 description
 
-msg_ok "Completed successfully!\n"
+msg_ok "Completed successfully!"
 echo -e "${CREATING}${GN}${APP} has been successfully installed!${CL}"
 echo -e "${INFO}${YW}One-time initialization is required before Bridge services are enabled.${CL}"
 echo -e "${INFO}${YW}Initialize the account inside the container:${CL}"
