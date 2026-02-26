@@ -10,7 +10,7 @@ source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main
 APP="ProtonMail-Bridge"
 var_tags="${var_tags:-mail;proton}"
 var_cpu="${var_cpu:-2}"
-var_ram="${var_ram:-512}"
+var_ram="${var_ram:-768}"
 var_disk="${var_disk:-8}"
 var_os="${var_os:-debian}"
 var_version="${var_version:-13}"
