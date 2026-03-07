@@ -31,34 +31,28 @@ function update_script() {
     exit
   fi
 
-  if ! check_for_gh_release "protonmail-bridge" "ProtonMail/proton-bridge"; then
-    msg_ok "No update available."
-    exit
+  if check_for_gh_release "protonmail-bridge" "ProtonMail/proton-bridge"; then
+    msg_info "Stopping Services"
+    systemctl stop protonmail-bridge-imap.socket protonmail-bridge-smtp.socket
+    systemctl stop protonmail-bridge-imap-proxy.service protonmail-bridge-smtp-proxy.service protonmail-bridge.service
+    msg_ok "Stopped Services"
+
+    msg_info "Updating Proton Mail Bridge"
+    fetch_and_deploy_gh_release "protonmail-bridge" "ProtonMail/proton-bridge" "binary"
+    msg_ok "Updated Proton Mail Bridge"
+
+    if [[ -f /home/protonbridge/.protonmailbridge-initialized ]]; then
+      msg_info "Starting Services"
+      systemctl start protonmail-bridge.service
+      systemctl start protonmail-bridge-imap.socket protonmail-bridge-smtp.socket
+      systemctl start protonmail-bridge-imap-proxy.service protonmail-bridge-smtp-proxy.service
+      msg_ok "Started Services"
+    else
+      msg_ok "Initialization not completed. Services remain disabled."
+    fi
+
+    msg_ok "Updated successfully!"
   fi
-
-
-  msg_info "Stopping Services"
-  systemctl stop protonmail-bridge-imap.socket protonmail-bridge-smtp.socket 2>/dev/null || true
-  systemctl stop protonmail-bridge-imap-proxy.service protonmail-bridge-smtp-proxy.service protonmail-bridge.service 2>/dev/null || true
-  msg_ok "Stopped Services"
-
-  msg_info "Updating ${APP}"
-  fetch_and_deploy_gh_release "protonmail-bridge" "ProtonMail/proton-bridge" "binary" "latest" "/tmp"
-  msg_ok "Updated ${APP}"
-
-  systemctl daemon-reload
-
-  if [[ -f /home/protonbridge/.protonmailbridge-initialized ]]; then
-    msg_info "Starting Services"
-    systemctl enable -q --now protonmail-bridge.service
-    systemctl enable -q --now protonmail-bridge-imap.socket protonmail-bridge-smtp.socket
-    systemctl start protonmail-bridge-imap-proxy.service protonmail-bridge-smtp-proxy.service
-    msg_ok "Started Services"
-  else
-    msg_ok "Initialization not completed. Services remain disabled."
-  fi
-
-  msg_ok "Updated successfully!"
   exit
 }
 
@@ -66,8 +60,8 @@ start
 build_container
 description
 
-msg_ok "Completed successfully!"
-echo -e "${CREATING}${GN}${APP} has been successfully installed!${CL}"
+msg_ok "Completed successfully!\n"
+echo -e "${CREATING}${GN}Proton Mail Bridge setup has been successfully initialized!${CL}"
 echo -e "${INFO}${YW}One-time initialization is required before Bridge services are enabled.${CL}"
 echo -e "${INFO}${YW}Initialize the account inside the container:${CL}"
 echo -e "${TAB}${YW}protonmailbridge-init${CL}"
