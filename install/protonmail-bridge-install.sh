@@ -83,13 +83,11 @@ cat <<'EOF'>/etc/systemd/system/protonmail-bridge-imap-proxy.service
 Description=Proton Mail Bridge IMAP Proxy (143 -> 127.0.0.1:1143)
 After=protonmail-bridge.service
 Requires=protonmail-bridge.service
-After=protonmail-bridge-imap.socket
-Requires=protonmail-bridge-imap.socket
-Sockets=protonmail-bridge-imap.socket
 ConditionPathExists=/home/protonbridge/.protonmailbridge-initialized
 
 [Service]
 Type=simple
+Sockets=protonmail-bridge-imap.socket
 ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:1143
 NoNewPrivileges=yes
 PrivateTmp=yes
@@ -116,13 +114,11 @@ cat <<'EOF'>/etc/systemd/system/protonmail-bridge-smtp-proxy.service
 Description=Proton Mail Bridge SMTP Proxy (587 -> 127.0.0.1:1025)
 After=protonmail-bridge.service
 Requires=protonmail-bridge.service
-After=protonmail-bridge-smtp.socket
-Requires=protonmail-bridge-smtp.socket
-Sockets=protonmail-bridge-smtp.socket
 ConditionPathExists=/home/protonbridge/.protonmailbridge-initialized
 
 [Service]
 Type=simple
+Sockets=protonmail-bridge-smtp.socket
 ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:1025
 NoNewPrivileges=yes
 PrivateTmp=yes
