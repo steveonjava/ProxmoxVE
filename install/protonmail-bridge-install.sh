@@ -71,13 +71,14 @@ ConditionPathExists=/home/protonbridge/.protonmailbridge-initialized
 [Socket]
 ListenStream=143
 Accept=no
+Service=protonmail-bridge-imap-proxy.service
 
 [Install]
 WantedBy=sockets.target
 EOF
 
 # IMAP proxy service (143 -> 127.0.0.1:1143)
-cat <<EOF >/etc/systemd/system/protonmail-bridge-imap-proxy.service
+cat <<'EOF'>/etc/systemd/system/protonmail-bridge-imap-proxy.service
 [Unit]
 Description=Proton Mail Bridge IMAP Proxy (143 -> 127.0.0.1:1143)
 After=protonmail-bridge.service
@@ -87,6 +88,9 @@ ConditionPathExists=/home/protonbridge/.protonmailbridge-initialized
 [Service]
 Type=simple
 ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:1143
+StandardInput=socket
+NoNewPrivileges=yes
+PrivateTmp=yes
 EOF
 
 # SMTP socket (LAN 587)
@@ -98,13 +102,14 @@ ConditionPathExists=/home/protonbridge/.protonmailbridge-initialized
 [Socket]
 ListenStream=587
 Accept=no
+Service=protonmail-bridge-smtp-proxy.service
 
 [Install]
 WantedBy=sockets.target
 EOF
 
 # SMTP proxy service (587 -> 127.0.0.1:1025)
-cat > /etc/systemd/system/protonmail-bridge-smtp-proxy.service <<'EOF'
+cat <<'EOF'>/etc/systemd/system/protonmail-bridge-smtp-proxy.service
 [Unit]
 Description=Proton Mail Bridge SMTP Proxy (587 -> 127.0.0.1:1025)
 After=protonmail-bridge.service
@@ -114,6 +119,9 @@ ConditionPathExists=/home/protonbridge/.protonmailbridge-initialized
 [Service]
 Type=simple
 ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:1025
+StandardInput=socket
+NoNewPrivileges=yes
+PrivateTmp=yes
 EOF
 
 systemctl daemon-reload
