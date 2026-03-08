@@ -26,7 +26,7 @@ install -d -m 0750 -o protonbridge -g protonbridge /home/protonbridge
 msg_ok "Created Service User"
 
 msg_info "Installing Proton Mail Bridge"
-fetch_and_deploy_gh_release "protonmail-bridge" "ProtonMail/proton-bridge" "binary" "v3.19.0"
+fetch_and_deploy_gh_release "protonmail-bridge" "ProtonMail/proton-bridge" "binary"
 msg_ok "Installed Proton Mail Bridge"
 
 msg_info "Creating Services"
