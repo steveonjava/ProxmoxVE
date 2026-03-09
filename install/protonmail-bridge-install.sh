@@ -108,7 +108,6 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 EOF
 
-systemctl daemon-reload
 msg_ok "Created Services"
 
 msg_info "Creating Helper Commands"
@@ -128,8 +127,8 @@ if [[ ! -f "${MARKER}" ]]; then
 fi
 
 # Stop sockets/proxies/bridge daemon before configuration
-systemctl stop protonmail-bridge-imap.socket protonmail-bridge-smtp.socket 2>/dev/null || true
-systemctl stop protonmail-bridge-imap-proxy protonmail-bridge-smtp-proxy protonmail-bridge 2>/dev/null || true
+systemctl stop protonmail-bridge-imap.socket protonmail-bridge-smtp.socket
+systemctl stop protonmail-bridge-imap-proxy protonmail-bridge-smtp-proxy protonmail-bridge
 
 if [[ "${FIRST_TIME}" == "1" ]]; then
   echo "First-time setup: initializing pass keychain for ${BRIDGE_USER} (required by Proton Mail Bridge on Linux)."
