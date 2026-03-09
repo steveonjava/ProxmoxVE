@@ -76,4 +76,4 @@ description
 msg_ok "Completed successfully!\n"
 echo -e "${CREATING}${GN}${APP} setup has been successfully initialized!${CL}"
 echo -e "${INFO}${YW}One-time configuration is required before Bridge services are enabled.${CL}"
-echo -e "${TAB}${YW}Run this command in the container: protonmailbridge-configure${CL}"
+echo -e "${INFO}${YW}Run this command in the container: protonmailbridge-configure${CL}"
