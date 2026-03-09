@@ -122,8 +122,6 @@ systemctl daemon-reload
 msg_ok "Created Services"
 
 msg_info "Creating Helper Commands"
-# Remove old helper if installer is re-run
-rm -f /usr/local/bin/protonmailbridge-init /usr/bin/protonmailbridge-init 2>/dev/null || true
 
 cat <<'EOF' > /usr/local/bin/protonmailbridge-configure
 #!/usr/bin/env bash
@@ -139,9 +137,9 @@ if [[ ! -f "${MARKER}" ]]; then
   FIRST_TIME=1
 fi
 
-# Stop sockets/proxies/bridge daemon if they were manually started
+# Stop sockets/proxies/bridge daemon before configuration
 systemctl stop protonmail-bridge-imap.socket protonmail-bridge-smtp.socket 2>/dev/null || true
-systemctl stop protonmail-bridge-imap-proxy.service protonmail-bridge-smtp-proxy.service protonmail-bridge.service 2>/dev/null || true
+systemctl stop protonmail-bridge-imap-proxy protonmail-bridge-smtp-proxy protonmail-bridge 2>/dev/null || true
 
 if [[ "${FIRST_TIME}" == "1" ]]; then
   echo "First-time setup: initializing pass keychain for ${BRIDGE_USER} (required by Proton Mail Bridge on Linux)."
@@ -167,14 +165,20 @@ if [[ "${FIRST_TIME}" == "1" ]]; then
 
   runuser -u "${BRIDGE_USER}" -- env HOME="${BRIDGE_HOME}" GNUPGHOME="${GNUPG_HOME}" \
     pass init "${FPR}"
-fi
 
-echo
-echo "Starting Proton Mail Bridge CLI."
-echo "Run: login"
-echo "Run: info"
-echo "Run: exit"
-echo
+  echo
+  echo "To do initial configuration of the Proton Mail Bridge:"
+  echo "Run: login"
+  echo "Run: info"
+  echo "Run: exit"
+  echo
+else
+  echo
+  echo "Launching Proton Mail Bridge CLI for configuration."
+  echo "External access is disabled until you exit."
+  echo "Run: exit"
+  echo
+fi
 
 runuser -u "${BRIDGE_USER}" -- env HOME="${BRIDGE_HOME}" \
   protonmail-bridge -c
