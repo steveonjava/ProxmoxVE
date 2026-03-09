@@ -20,7 +20,7 @@
       "script": "ct/protonmail-bridge.sh",
       "resources": {
         "cpu": 2,
-        "ram": 768,
+        "ram": 1024,
         "hdd": 8,
         "os": "debian",
         "version": "13"
@@ -33,7 +33,7 @@
   },
   "notes": [
     {
-      "text": "After install, run protonmailbridge-init inside the container to create a pass keychain and log in via the Bridge CLI.",
+      "text": "After install, run protonmailbridge-configure inside the container for first-time setup.",
       "type": "info"
     },
     {
@@ -41,7 +41,7 @@
       "type": "info"
     },
     {
-      "text": "Use protonmailbridge-configure to temporarily stop the service and enter the Bridge CLI without running a second instance.",
+      "text": "You can later use protonmailbridge-configure to temporarily stop the service and enter the Bridge CLI.",
       "type": "info"
     }
   ]

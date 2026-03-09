@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
-COMMUNITY_SCRIPTS_URL="${COMMUNITY_SCRIPTS_URL:-https://git.community-scripts.org/community-scripts/ProxmoxVED/raw/branch/main}"
-source <(curl -fsSL "$COMMUNITY_SCRIPTS_URL/misc/build.func")
+source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVED/main/misc/build.func)
 # Copyright (c) 2021-2026 community-scripts ORG
-# Author: Stephen Chin
+# Author: Stephen Chin (steveonjava)
 # License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
 # Source: https://github.com/ProtonMail/proton-bridge
-# Description: Debian LXC that runs Proton Mail Bridge headless and exposes IMAP/SMTP to the LAN via systemd-socket-proxyd.
 
 APP="ProtonMail-Bridge"
 var_tags="${var_tags:-mail;proton}"
 var_cpu="${var_cpu:-2}"
-var_ram="${var_ram:-768}"
+var_ram="${var_ram:-1024}"
 var_disk="${var_disk:-8}"
 var_os="${var_os:-debian}"
 var_version="${var_version:-13}"
@@ -28,29 +26,44 @@ function update_script() {
 
   if [[ ! -x /usr/bin/protonmail-bridge ]]; then
     msg_error "No ${APP} Installation Found!"
-    exit
+    exit 1
   fi
 
   if check_for_gh_release "protonmail-bridge" "ProtonMail/proton-bridge"; then
+    local -a bridge_units=(
+      protonmail-bridge
+      protonmail-bridge-imap.socket
+      protonmail-bridge-smtp.socket
+      protonmail-bridge-imap-proxy
+      protonmail-bridge-smtp-proxy
+    )
+    local unit
+    declare -A was_active
+    for unit in "${bridge_units[@]}"; do
+      if systemctl is-active --quiet "$unit" 2>/dev/null; then
+        was_active["$unit"]=1
+      else
+        was_active["$unit"]=0
+      fi
+    done
+
     msg_info "Stopping Services"
-    systemctl stop protonmail-bridge-imap.socket protonmail-bridge-smtp.socket
-    systemctl stop protonmail-bridge-imap-proxy.service protonmail-bridge-smtp-proxy.service protonmail-bridge.service
+    systemctl stop protonmail-bridge-imap.socket protonmail-bridge-smtp.socket protonmail-bridge-imap-proxy protonmail-bridge-smtp-proxy protonmail-bridge
     msg_ok "Stopped Services"
 
-    msg_info "Updating Proton Mail Bridge"
     fetch_and_deploy_gh_release "protonmail-bridge" "ProtonMail/proton-bridge" "binary"
-    msg_ok "Updated Proton Mail Bridge"
 
     if [[ -f /home/protonbridge/.protonmailbridge-initialized ]]; then
       msg_info "Starting Services"
-      systemctl start protonmail-bridge.service
-      systemctl start protonmail-bridge-imap.socket protonmail-bridge-smtp.socket
-      systemctl start protonmail-bridge-imap-proxy.service protonmail-bridge-smtp-proxy.service
+      for unit in "${bridge_units[@]}"; do
+        if [[ "${was_active[$unit]:-0}" == "1" ]]; then
+          systemctl start "$unit"
+        fi
+      done
       msg_ok "Started Services"
     else
       msg_ok "Initialization not completed. Services remain disabled."
     fi
-
     msg_ok "Updated successfully!"
   fi
   exit
@@ -61,15 +74,6 @@ build_container
 description
 
 msg_ok "Completed successfully!\n"
-echo -e "${CREATING}${GN}Proton Mail Bridge setup has been successfully initialized!${CL}"
-echo -e "${INFO}${YW}One-time initialization is required before Bridge services are enabled.${CL}"
-echo -e "${INFO}${YW}Initialize the account inside the container:${CL}"
-echo -e "${TAB}${YW}protonmailbridge-init${CL}"
-echo -e "${INFO}${YW}After initial configuration, use this to access the Bridge CLI:${CL}"
-echo -e "${TAB}${YW}protonmailbridge-configure${CL}"
-echo -e "${INFO}${YW}LAN-accessible forwarded ports (container IP ${IP}):${CL}"
-echo -e "${TAB}${GATEWAY}${BGN}IMAP  ${IP}:143${CL}"
-echo -e "${TAB}${GATEWAY}${BGN}SMTP  ${IP}:587${CL}"
-echo -e "${INFO}${YW}Forwarding targets inside the container (Bridge defaults):${CL}"
-echo -e "${TAB}${YW}IMAP 127.0.0.1:1143${CL}"
-echo -e "${TAB}${YW}SMTP 127.0.0.1:1025${CL}"
+echo -e "${CREATING}${GN}${APP} setup has been successfully initialized!${CL}"
+echo -e "${INFO}${YW}One-time configuration is required before Bridge services are enabled.${CL}"
+echo -e "${TAB}${YW}Run this command in the container: protonmailbridge-configure${CL}"
