@@ -1,0 +1,52 @@
+{
+  "name": "JRiver Media Center",
+  "slug": "jriver",
+  "categories": [
+    13
+  ],
+  "date_created": "2026-03-10",
+  "type": "ct",
+  "updateable": true,
+  "privileged": false,
+  "interface_port": null,
+  "documentation": "https://wiki.jriver.com/index.php/Linux",
+  "website": "https://www.jriver.com/",
+  "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/jriver.webp",
+  "config_path": "",
+  "description": "JRiver Media Center is a comprehensive media management application for audio, video, images, and television. This LXC runs MC35 with a headless Xvnc display accessible via VNC on port 5901.",
+  "install_methods": [
+    {
+      "type": "default",
+      "script": "ct/jriver.sh",
+      "resources": {
+        "cpu": 4,
+        "ram": 4096,
+        "hdd": 20,
+        "os": "Debian",
+        "version": "13"
+      }
+    }
+  ],
+  "default_credentials": {
+    "username": null,
+    "password": null
+  },
+  "notes": [
+    {
+      "text": "A JRiver Media Center license is required. Purchase at https://www.jriver.com/",
+      "type": "warning"
+    },
+    {
+      "text": "Access the GUI via any VNC client on port 5901 (e.g. vnc://CONTAINER_IP:5901).",
+      "type": "info"
+    },
+    {
+      "text": "Run `jriver-configure` inside the container to set a VNC password, restart services, or update MC.",
+      "type": "info"
+    },
+    {
+      "text": "Installation uses the installJRMC community script (https://github.com/cryobry/installJRMC) which manages JRiver repo setup, updates, and VNC services.",
+      "type": "info"
+    }
+  ]
+}
