@@ -40,6 +40,35 @@ $STD runuser -l jriver -- /usr/local/bin/installJRMC \
   --no-update
 msg_ok "Installed JRiver Media Center 35"
 
+msg_info "Configuring VNC for LAN Access"
+VNC_DISPLAY=1
+VNC_PORT=5901
+
+# Override the installJRMC service to use display :1 (port 5901) and allow
+# non-localhost connections so VNC clients on the LAN can reach the container.
+mkdir -p /etc/systemd/system/jriver-xvnc@.service.d
+cat <<OVERRIDE >/etc/systemd/system/jriver-xvnc@.service.d/lan-access.conf
+[Service]
+# Clear the ExecStartPre/ExecStart set by installJRMC, then redefine them
+# with display :1 and -localhost no.
+ExecStartPre=
+ExecStartPre=/bin/sh -c '/usr/bin/vncserver -kill :${VNC_DISPLAY} &>/dev/null || :'
+ExecStart=
+ExecStart=/usr/bin/vncserver :${VNC_DISPLAY} -geometry 1440x900 -alwaysshared -autokill -xstartup /usr/bin/mediacenter35 -name %i:${VNC_DISPLAY} -SecurityTypes None -localhost no
+OVERRIDE
+
+# Also write a per-user VNC config as a safety net
+install -d -m 700 -o jriver -g jriver /home/jriver/.vnc
+cat <<VNCCONF >/home/jriver/.vnc/config
+localhost=no
+VNCCONF
+chown jriver:jriver /home/jriver/.vnc/config
+chmod 600 /home/jriver/.vnc/config
+
+systemctl daemon-reload
+systemctl restart jriver-xvnc@jriver.service
+msg_ok "VNC listening on port ${VNC_PORT} (display :${VNC_DISPLAY})"
+
 msg_info "Creating Helper Commands"
 cat <<'EOF' >/usr/local/bin/jriver-configure
 #!/usr/bin/env bash
@@ -51,7 +80,7 @@ JRIVER_HOME="/home/${JRIVER_USER}"
 echo "JRiver Media Center Configuration"
 echo "==================================="
 echo
-echo "Current VNC display:  :1 (port 5901)"
+echo "Current VNC display:  :1 (port 5901, LAN accessible)"
 echo "Service user:         ${JRIVER_USER}"
 echo "Home directory:       ${JRIVER_HOME}"
 echo
