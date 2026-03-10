@@ -65,8 +65,21 @@ VNCCONF
 chown jriver:jriver /home/jriver/.vnc/config
 chmod 600 /home/jriver/.vnc/config
 
+# Stop the service installJRMC started (display :10) before reconfiguring
+systemctl stop jriver-xvnc@jriver.service 2>/dev/null || true
+# Kill any leftover Xtigervnc processes and stale X locks
+pkill -u jriver Xtigervnc 2>/dev/null || true
+rm -f /tmp/.X*-lock /tmp/.X11-unix/X*
+
+# Migrate .vnc → .config/tigervnc so TigerVNC doesn't fail on auto-migration
+if [ -d /home/jriver/.vnc ] && [ ! -d /home/jriver/.config/tigervnc ]; then
+  install -d -m 700 -o jriver -g jriver /home/jriver/.config
+  cp -a /home/jriver/.vnc /home/jriver/.config/tigervnc
+  chown -R jriver:jriver /home/jriver/.config/tigervnc
+fi
+
 systemctl daemon-reload
-systemctl restart jriver-xvnc@jriver.service
+systemctl start jriver-xvnc@jriver.service
 msg_ok "VNC listening on port ${VNC_PORT} (display :${VNC_DISPLAY})"
 
 msg_info "Creating Helper Commands"
