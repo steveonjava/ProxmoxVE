@@ -18,6 +18,7 @@ $STD apt install -y \
   dbus-x11 \
   x11-xserver-utils \
   tigervnc-standalone-server \
+  xauth \
   sudo
 msg_ok "Installed Dependencies"
 
@@ -28,16 +29,11 @@ chmod 0440 /etc/sudoers.d/jriver
 msg_ok "Created Service User"
 
 msg_info "Preparing VNC directories"
-# Pre-create the tigervnc config dir so TigerVNC never attempts
-# the .vnc → .config/tigervnc migration (which fails in containers).
+# Pre-create tigervnc config dirs so the vncserver wrapper's migration
+# check never fires (it always fails inside LXC containers).
 install -d -m 700 -o jriver -g jriver /home/jriver/.vnc
 install -d -m 700 -o jriver -g jriver /home/jriver/.config
 install -d -m 700 -o jriver -g jriver /home/jriver/.config/tigervnc
-cat <<'VNCCONF' >/home/jriver/.config/tigervnc/config
-localhost=no
-VNCCONF
-chown jriver:jriver /home/jriver/.config/tigervnc/config
-chmod 600 /home/jriver/.config/tigervnc/config
 msg_ok "Prepared VNC directories"
 
 msg_info "Downloading installJRMC"
@@ -47,7 +43,8 @@ chmod +x /usr/local/bin/installJRMC
 msg_ok "Downloaded installJRMC"
 
 msg_info "Installing JRiver Media Center 35 (this may take several minutes)"
-# Install only the repo/packages — we manage VNC ourselves.
+# Install repo/packages only — we manage VNC ourselves to avoid the
+# vncserver Perl wrapper's broken .vnc migration inside LXC.
 $STD runuser -l jriver -- /usr/local/bin/installJRMC \
   --install=repo \
   --yes \
@@ -58,19 +55,56 @@ msg_info "Configuring VNC Service"
 VNC_DISPLAY=1
 VNC_PORT=5901
 
-# Create our own systemd template unit for Xvnc on display :1 with LAN access.
+# Create a launcher that calls Xtigervnc directly (bypasses vncserver wrapper).
+cat <<'LAUNCHER' >/usr/local/bin/jriver-vnc-start
+#!/bin/bash
+set -e
+export HOME=/home/jriver
+export USER=jriver
+export DISPLAY=:1
+
+# Ensure .Xauthority exists
+touch "$HOME/.Xauthority"
+xauth generate "$DISPLAY" . trusted 2>/dev/null || true
+
+# Start Xtigervnc directly — no vncserver Perl wrapper
+/usr/bin/Xtigervnc "$DISPLAY" \
+  -geometry 1440x900 \
+  -rfbport 5901 \
+  -AlwaysShared \
+  -NeverShared=0 \
+  -SecurityTypes None \
+  -localhost 0 \
+  -desktop "JRiver Media Center" \
+  -auth "$HOME/.Xauthority" &
+XVNC_PID=$!
+
+# Wait for the X display to become ready (up to 15s)
+for _i in $(seq 1 30); do
+  xdpyinfo -display "$DISPLAY" >/dev/null 2>&1 && break
+  sleep 0.5
+done
+
+# Launch JRiver Media Center on the VNC display
+/usr/bin/mediacenter35 &
+
+# Stay alive while Xtigervnc is running
+wait $XVNC_PID
+LAUNCHER
+chmod +x /usr/local/bin/jriver-vnc-start
+
+# Systemd unit — Type=simple, calls Xtigervnc directly via the launcher.
 cat <<UNIT >/etc/systemd/system/jriver-xvnc@.service
 [Unit]
 Description=JRiver Media Center VNC (display :${VNC_DISPLAY})
 After=network.target
 
 [Service]
-Type=forking
+Type=simple
 User=%i
-PAMName=login
-ExecStartPre=/bin/sh -c '/usr/bin/vncserver -kill :${VNC_DISPLAY} &>/dev/null || :'
-ExecStart=/usr/bin/vncserver :${VNC_DISPLAY} -geometry 1440x900 -alwaysshared -autokill -xstartup /usr/bin/mediacenter35 -name %i:${VNC_DISPLAY} -SecurityTypes None -localhost no
-ExecStop=/usr/bin/vncserver -kill :${VNC_DISPLAY}
+ExecStartPre=-/bin/sh -c 'rm -f /tmp/.X${VNC_DISPLAY}-lock /tmp/.X11-unix/X${VNC_DISPLAY}'
+ExecStart=/usr/local/bin/jriver-vnc-start
+ExecStop=/bin/kill -TERM \$MAINPID
 Restart=on-failure
 RestartSec=5
 
@@ -78,7 +112,7 @@ RestartSec=5
 WantedBy=multi-user.target
 UNIT
 
-# Clean any stale X locks from earlier attempts
+# Clean any stale X locks
 rm -f /tmp/.X*-lock /tmp/.X11-unix/X*
 
 systemctl daemon-reload
