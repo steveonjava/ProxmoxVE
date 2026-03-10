@@ -37,7 +37,7 @@ function update_script() {
   msg_ok "Updated installJRMC"
 
   msg_info "Updating JRiver Media Center"
-  $STD runuser -l jriver -- bash /usr/local/bin/installJRMC \
+  $STD runuser -l jriver -- /usr/local/bin/installJRMC \
     --install=repo \
     --yes \
     --no-update

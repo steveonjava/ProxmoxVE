@@ -33,7 +33,7 @@ chmod +x /usr/local/bin/installJRMC
 msg_ok "Downloaded installJRMC"
 
 msg_info "Installing JRiver Media Center 35 (this may take several minutes)"
-$STD runuser -l jriver -- bash /usr/local/bin/installJRMC \
+$STD runuser -l jriver -- /usr/local/bin/installJRMC \
   --install=repo \
   --service=jriver-xvnc \
   --yes \
@@ -92,7 +92,7 @@ select opt in \
     echo "Started."
     ;;
   "Update JRiver Media Center")
-    runuser -l "${JRIVER_USER}" -- bash /usr/local/bin/installJRMC \
+    runuser -l "${JRIVER_USER}" -- /usr/local/bin/installJRMC \
       --install=repo \
       --yes
     echo "Update complete."
