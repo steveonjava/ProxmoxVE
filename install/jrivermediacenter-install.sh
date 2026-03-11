@@ -34,6 +34,7 @@ $STD apt install -y \
   libpam-pwdfile \
   nginx \
   novnc \
+  openssh-server \
   openssl \
   python3 \
   ssl-cert \
@@ -42,6 +43,8 @@ $STD apt install -y \
   websockify \
   x11-utils \
   x11-xserver-utils \
+  x2goserver \
+  x2goserver-xsession \
   xauth \
   sudo
 msg_ok "Installed Dependencies"
@@ -50,8 +53,7 @@ msg_info "Creating Service User"
 if ! id -u "${APP_USER}" >/dev/null 2>&1; then
   useradd -m -d "${APP_HOME}" -s /bin/bash "${APP_USER}"
 fi
-echo "${APP_USER} ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/${APP_USER}
-chmod 0440 /etc/sudoers.d/${APP_USER}
+passwd -l "${APP_USER}" >/dev/null 2>&1 || true
 msg_ok "Created Service User"
 
 msg_info "Preparing Runtime Directories"
@@ -71,13 +73,18 @@ JRMC_WEBSOCKIFY_PORT="${JRMC_WEBSOCKIFY_PORT}"
 JRMC_WEB_PORT="${JRMC_WEB_PORT}"
 JRMC_WIDTH="1440"
 JRMC_HEIGHT="900"
-JRMC_HTPASSWD="/etc/nginx/jrmc.htpasswd"
+JRMC_WEB_HTPASSWD="/etc/nginx/jrmc.htpasswd"
+JRMC_VNC_HTPASSWD="${CONFIG_DIR}/native-vnc.htpasswd"
 JRMC_BOOTSTRAP_FILE="${CONFIG_DIR}/bootstrap-complete"
 JRMC_NATIVE_VNC_ENABLED="0"
 JRMC_VNC_PAM_SERVICE="jrmc-vnc"
-JRMC_NATIVE_VNC_SECURITY="X509Plain"
+JRMC_NATIVE_VNC_SECURITY="TLSPlain"
 JRMC_NATIVE_VNC_CERT="${CONFIG_DIR}/native-vnc-cert.pem"
 JRMC_NATIVE_VNC_KEY="${CONFIG_DIR}/native-vnc-key.pem"
+JRMC_X2GO_ENABLED="0"
+JRMC_X2GO_USER="${APP_USER}"
+JRMC_X2GO_PORT="22"
+JRMC_X2GO_COMMAND="jrmc-x2go-launch"
 EOF
 chmod 0644 /etc/default/jrmc
 msg_ok "Prepared Runtime Directories"
@@ -105,8 +112,13 @@ print(''.join(secrets.choice(alphabet) for _ in range(32)))
 PY
 )
 htpasswd -b -c -5 /etc/nginx/jrmc.htpasswd disabled "${tmp_password}" >/dev/null 2>&1
+htpasswd -b -c -5 "${CONFIG_DIR}/native-vnc.htpasswd" disabled "${tmp_password}" >/dev/null 2>&1
+printf '%s:%s\n' "${APP_USER}" "${tmp_password}" | chpasswd
+passwd -l "${APP_USER}" >/dev/null 2>&1 || true
 chown root:www-data /etc/nginx/jrmc.htpasswd
 chmod 0640 /etc/nginx/jrmc.htpasswd
+chown "${APP_USER}:${APP_USER}" "${CONFIG_DIR}/native-vnc.htpasswd"
+chmod 0600 "${CONFIG_DIR}/native-vnc.htpasswd"
 
 cat <<'EOF' >/usr/local/bin/jrmc-vnc-start
 #!/usr/bin/env bash
@@ -245,15 +257,23 @@ fi
 
 /usr/local/bin/jrmc-native-vnc-cert-ensure
 
-exec /usr/bin/x0vncserver \
-  -display "${DISPLAY}" \
-  -rfbport "${JRMC_NATIVE_VNC_PORT}" \
-  -SecurityTypes "${JRMC_NATIVE_VNC_SECURITY}" \
-  -PAMService "${JRMC_VNC_PAM_SERVICE}" \
-  -PlainUsers '*' \
-  -X509Cert "${JRMC_NATIVE_VNC_CERT}" \
-  -X509Key "${JRMC_NATIVE_VNC_KEY}" \
+args=(
+  -display "${DISPLAY}"
+  -rfbport "${JRMC_NATIVE_VNC_PORT}"
+  -SecurityTypes "${JRMC_NATIVE_VNC_SECURITY}"
+  -PAMService "${JRMC_VNC_PAM_SERVICE}"
+  -PlainUsers '*'
   -AlwaysShared
+)
+
+if [[ "${JRMC_NATIVE_VNC_SECURITY}" == X509* ]]; then
+  args+=(
+    -X509Cert "${JRMC_NATIVE_VNC_CERT}"
+    -X509Key "${JRMC_NATIVE_VNC_KEY}"
+  )
+fi
+
+exec /usr/bin/x0vncserver "${args[@]}"
 EOF
 chmod +x /usr/local/bin/jrmc-native-vnc-start
 
@@ -275,10 +295,19 @@ if [[ ! "${username}" =~ ^[A-Za-z0-9._-]{3,32}$ ]]; then
   exit 1
 fi
 
-htpasswd -b -c -5 "${JRMC_HTPASSWD}" "${username}" "${password}" >/dev/null 2>&1
+htpasswd -b -c -5 "${JRMC_WEB_HTPASSWD}" "${username}" "${password}" >/dev/null 2>&1
+htpasswd -b -c -5 "${JRMC_VNC_HTPASSWD}" "${username}" "${password}" >/dev/null 2>&1
+printf '%s:%s\n' "${JRMC_X2GO_USER}" "${password}" | chpasswd
 touch "${JRMC_BOOTSTRAP_FILE}"
-chown root:www-data "${JRMC_HTPASSWD}"
-chmod 0640 "${JRMC_HTPASSWD}"
+chown root:www-data "${JRMC_WEB_HTPASSWD}"
+chmod 0640 "${JRMC_WEB_HTPASSWD}"
+chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_VNC_HTPASSWD}"
+chmod 0600 "${JRMC_VNC_HTPASSWD}"
+if [[ "${JRMC_X2GO_ENABLED:-0}" == "1" ]]; then
+  passwd -u "${JRMC_X2GO_USER}" >/dev/null 2>&1 || true
+else
+  passwd -l "${JRMC_X2GO_USER}" >/dev/null 2>&1 || true
+fi
 chmod 0644 "${JRMC_BOOTSTRAP_FILE}"
 
 cat <<CREDS >/root/jrmc.creds
@@ -291,6 +320,10 @@ Password: ${password}
 Default mode: Media Server
 Interactive UI: open Dashboard, then Launch JRMC UI.
 Native VNC: optional from Dashboard on port ${JRMC_NATIVE_VNC_PORT} while UI mode is active.
+Native VNC: connect with the same Dashboard username and password; no client certificate import is required.
+X2Go app mode: optional from Dashboard over SSH on port ${JRMC_X2GO_PORT}.
+X2Go login: user ${JRMC_X2GO_USER}, password matches the Dashboard password while X2Go access is enabled.
+X2Go command: ${JRMC_X2GO_COMMAND}
 CREDS
 
 systemctl reload nginx
@@ -340,6 +373,8 @@ case "${mode}" in
     echo "jrmc-ui: $(systemctl is-active jrmc-ui.service 2>/dev/null || true)"
     echo "jrmc-native-vnc: $(systemctl is-active jrmc-native-vnc.service 2>/dev/null || true)"
     echo "native-vnc: $([[ "${JRMC_NATIVE_VNC_ENABLED:-0}" == "1" ]] && echo enabled || echo disabled)"
+    echo "x2go: $([[ "${JRMC_X2GO_ENABLED:-0}" == "1" ]] && echo enabled || echo disabled)"
+    echo "ssh: $(systemctl is-active ssh.service 2>/dev/null || true)"
     ;;
   *)
     echo "Usage: jrmc-mode {ui|mediaserver|stop-ui|stop-server|status}" >&2
@@ -440,6 +475,111 @@ esac
 EOF
 chmod +x /usr/local/bin/jrmc-direct-vnc
 
+cat <<'EOF' >/usr/local/bin/jrmc-x2go-launch
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/default/jrmc
+
+export HOME="${JRMC_HOME}"
+export USER="${JRMC_USER}"
+
+exec dbus-launch --exit-with-session /usr/bin/mediacenter35
+EOF
+chmod +x /usr/local/bin/jrmc-x2go-launch
+
+cat <<'EOF' >/usr/local/bin/jrmc-x2go
+#!/usr/bin/env bash
+set -euo pipefail
+
+source /etc/default/jrmc
+
+action="${1:-status}"
+
+update_default() {
+  local key="$1"
+  local value="$2"
+  python3 - "$key" "$value" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path('/etc/default/jrmc')
+key = sys.argv[1]
+value = sys.argv[2]
+lines = path.read_text().splitlines()
+new_lines = []
+found = False
+for line in lines:
+    if line.startswith(f"{key}="):
+        new_lines.append(f'{key}="{value}"')
+        found = True
+    else:
+        new_lines.append(line)
+if not found:
+    new_lines.append(f'{key}="{value}"')
+path.write_text("\n".join(new_lines) + "\n")
+PY
+}
+
+terminate_x2go_sessions() {
+  if command -v x2golistsessions_root >/dev/null 2>&1 && command -v x2goterminate-session >/dev/null 2>&1; then
+    while IFS='|' read -r _agent_pid session_id _display _server user _rest; do
+      [[ -n "${session_id:-}" && "${user:-}" == "${JRMC_X2GO_USER}" ]] || continue
+      x2goterminate-session "${session_id}" >/dev/null 2>&1 || true
+    done < <(x2golistsessions_root 2>/dev/null || true)
+  fi
+  pkill -u "${JRMC_X2GO_USER}" -f 'nxagent|x2goagent|mediacenter35' >/dev/null 2>&1 || true
+}
+
+print_status() {
+  source /etc/default/jrmc
+  local state="disabled"
+  if [[ "${JRMC_X2GO_ENABLED:-0}" == "1" ]]; then
+    state="enabled"
+  fi
+
+  echo "x2go: ${state}"
+  echo "ssh: $(systemctl is-active ssh.service 2>/dev/null || true)"
+  echo "x2go-user: ${JRMC_X2GO_USER}"
+  if [[ "${state}" == "enabled" ]]; then
+    echo "endpoint: $(hostname -I | awk '{print $1}'):${JRMC_X2GO_PORT}"
+    echo "command: ${JRMC_X2GO_COMMAND}"
+    echo "security: SSH-encrypted password login for ${JRMC_X2GO_USER}; password matches Dashboard while enabled"
+  else
+    echo "endpoint: unavailable until X2Go access is enabled"
+  fi
+}
+
+case "${action}" in
+  enable)
+    update_default JRMC_X2GO_ENABLED 1
+    source /etc/default/jrmc
+    systemctl stop jrmc-native-vnc.service jrmc-ui.service jrmc-websockify.service jrmc-mediaserver.service || true
+    systemctl stop jrmc-vnc.service || true
+    passwd -u "${JRMC_X2GO_USER}" >/dev/null 2>&1 || true
+    systemctl enable --now ssh.service >/dev/null 2>&1
+    echo "X2Go application mode enabled. Connect over SSH to port ${JRMC_X2GO_PORT} as ${JRMC_X2GO_USER} and launch ${JRMC_X2GO_COMMAND}."
+    ;;
+  disable)
+    update_default JRMC_X2GO_ENABLED 0
+    source /etc/default/jrmc
+    terminate_x2go_sessions
+    passwd -l "${JRMC_X2GO_USER}" >/dev/null 2>&1 || true
+    systemctl stop ssh.service >/dev/null 2>&1 || true
+    systemctl start jrmc-vnc.service >/dev/null 2>&1 || true
+    systemctl restart jrmc-mediaserver.service >/dev/null 2>&1 || true
+    echo "X2Go application mode disabled. JRMC Media Server mode restored."
+    ;;
+  status)
+    print_status
+    ;;
+  *)
+    echo "Usage: jrmc-x2go {enable|disable|status}" >&2
+    exit 1
+    ;;
+esac
+EOF
+chmod +x /usr/local/bin/jrmc-x2go
+
 cat <<'EOF' >/usr/local/bin/jrmc-activate
 #!/usr/bin/env bash
 set -euo pipefail
@@ -526,6 +666,9 @@ mapping = {
     "enable-direct-vnc": ["sudo", "/usr/local/bin/jrmc-direct-vnc", "enable"],
     "disable-direct-vnc": ["sudo", "/usr/local/bin/jrmc-direct-vnc", "disable"],
     "direct-vnc-status": ["sudo", "/usr/local/bin/jrmc-direct-vnc", "status"],
+  "enable-x2go": ["sudo", "/usr/local/bin/jrmc-x2go", "enable"],
+  "disable-x2go": ["sudo", "/usr/local/bin/jrmc-x2go", "disable"],
+  "x2go-status": ["sudo", "/usr/local/bin/jrmc-x2go", "status"],
 }
 
 print("Content-Type: text/html")
@@ -562,7 +705,7 @@ cat <<'EOF' >${WEB_ROOT}/setup/index.html
 <body>
   <div class="card">
     <h1>JRiver Media Center Web Setup</h1>
-    <p>Create the initial noVNC dashboard account. Browser access is protected by HTTPS with a self-signed certificate and HTTP basic auth.</p>
+    <p>Create the initial JRMC Dashboard account. Browser access is protected by HTTPS with a self-signed certificate and HTTP basic auth.</p>
     <form method="post" action="/cgi-bin/jrmc-setup.py">
       <label>Username</label>
       <input name="username" minlength="3" maxlength="32" required>
@@ -572,7 +715,7 @@ cat <<'EOF' >${WEB_ROOT}/setup/index.html
       <input type="password" name="confirm_password" minlength="8" required>
       <button type="submit">Create web credentials</button>
     </form>
-    <p>After setup, sign in at <a href="/dashboard/">Dashboard</a>, then launch the JRMC UI.</p>
+    <p>After setup, sign in at <a href="/dashboard/">Dashboard</a>. Native VNC and X2Go can both be enabled later from the Dashboard when interactive access is needed.</p>
   </div>
 </body>
 </html>
@@ -607,15 +750,26 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
   </div>
   <div class="card">
     <h2>Interactive Session</h2>
-    <p>After launching the UI, open noVNC in the browser or optionally enable secure native VNC for TigerVNC clients.</p>
+    <p>After launching the UI, open noVNC in the browser or optionally enable secure native VNC for Remmina, TigerVNC, and other compatible clients.</p>
     <div class="actions">
       <a href="/novnc/vnc.html?autoconnect=1&resize=remote&path=/websockify">Open noVNC</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=enable-direct-vnc">Enable Native VNC</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=disable-direct-vnc">Disable Native VNC</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=direct-vnc-status">Native VNC Status</a>
     </div>
-    <p>Secure native VNC listens on port <code>5902</code>, accepts the same Dashboard username and password, and is only reachable while JRMC UI mode is active.</p>
-    <p>For TigerVNC clients, download the current certificate: <a class="alt" href="/dashboard/native-vnc-cert.pem">native-vnc-cert.pem</a></p>
+    <p>Secure native VNC listens on port <code>5902</code>, is only reachable while JRMC UI mode is active, uses TLS-encrypted username/password authentication, and requires the same Dashboard username and password.</p>
+    <p>No client certificate import is required.</p>
+  </div>
+  <div class="card">
+    <h2>X2Go Application Mode</h2>
+    <p>X2Go is an SSH-encrypted alternative that launches only the JRiver application instead of sharing the full desktop. Enabling X2Go stops the current JRMC mode until you disable it again.</p>
+    <div class="actions">
+      <a class="alt" href="/cgi-bin/jrmc-control.py?action=enable-x2go">Enable X2Go App Mode</a>
+      <a class="alt" href="/cgi-bin/jrmc-control.py?action=disable-x2go">Disable X2Go App Mode</a>
+      <a class="alt" href="/cgi-bin/jrmc-control.py?action=x2go-status">X2Go Status</a>
+    </div>
+    <p>Use X2Go Client with SSH host <code>CONTAINER_IP</code>, port <code>22</code>, username <code>jriver</code>, and a rootless single application command of <code>jrmc-x2go-launch</code>.</p>
+    <p>The X2Go password matches the Dashboard password while X2Go is enabled. No plaintext password is sent over the network because X2Go uses SSH transport.</p>
   </div>
   <div class="card">
     <h2>Activation</h2>
@@ -698,15 +852,41 @@ EOF
 ln -sf /etc/nginx/sites-available/jrmc.conf /etc/nginx/sites-enabled/jrmc.conf
 rm -f /etc/nginx/sites-enabled/default
 
-cat <<'EOF' >/etc/pam.d/jrmc-vnc
-auth required pam_pwdfile.so pwdfile=/etc/nginx/jrmc.htpasswd
+cat <<EOF >/etc/pam.d/jrmc-vnc
+auth required pam_pwdfile.so pwdfile=${CONFIG_DIR}/native-vnc.htpasswd
 account required pam_permit.so
 session required pam_permit.so
 password required pam_deny.so
 EOF
 
+install -d -m 755 /etc/ssh/sshd_config.d
+cat <<EOF >/etc/ssh/sshd_config.d/jrmc-x2go.conf
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+PermitRootLogin no
+UsePAM yes
+
+Match User ${APP_USER}
+  PasswordAuthentication yes
+  KbdInteractiveAuthentication yes
+  AllowTcpForwarding yes
+  AllowAgentForwarding no
+  X11Forwarding no
+  PermitTTY no
+EOF
+
+cat <<'EOF' >/usr/share/applications/jrmc-x2go.desktop
+[Desktop Entry]
+Type=Application
+Name=JRiver Media Center
+Exec=jrmc-x2go-launch
+Terminal=false
+Categories=AudioVideo;
+EOF
+
 cat <<'EOF' >/etc/sudoers.d/jrmc-web
-www-data ALL=(root) NOPASSWD: /usr/local/bin/jrmc-mode, /usr/local/bin/jrmc-direct-vnc, /usr/local/bin/jrmc-set-web-credentials
+www-data ALL=(root) NOPASSWD: /usr/local/bin/jrmc-mode, /usr/local/bin/jrmc-direct-vnc, /usr/local/bin/jrmc-x2go, /usr/local/bin/jrmc-set-web-credentials
 EOF
 chmod 0440 /etc/sudoers.d/jrmc-web
 
@@ -804,6 +984,7 @@ rm -f /tmp/.X*-lock /tmp/.X11-unix/X*
 systemctl daemon-reload
 systemctl enable --now fcgiwrap.socket
 systemctl enable nginx jrmc-mediaserver.service
+systemctl disable --now ssh.service >/dev/null 2>&1 || true
 systemctl restart nginx
 systemctl restart jrmc-mediaserver.service
 msg_ok "Configured Browser-first JRMC access on https://IP:${JRMC_WEB_PORT}/setup/"
@@ -820,6 +1001,9 @@ echo "Web setup URL:        https://<container-ip>:5800/setup/"
 echo "Default mode:         Media Server"
 echo "Interactive UI:       noVNC via Dashboard"
 echo "Native VNC:           Optional on port 5902 while UI mode is active"
+echo "Native VNC login:     Same Dashboard username/password; no client certificate import required"
+echo "X2Go app mode:        Optional over SSH on port 22 using command jrmc-x2go-launch"
+echo "X2Go login:           User jriver, password matches Dashboard while X2Go is enabled"
 echo
 
 PS3="Select an option: "
@@ -830,6 +1014,9 @@ select opt in \
   "Enable Native VNC" \
   "Disable Native VNC" \
   "Show Native VNC status" \
+  "Enable X2Go app mode" \
+  "Disable X2Go app mode" \
+  "Show X2Go status" \
   "Show service status" \
   "Import .mjr activation file" \
   "Update JRiver Media Center" \
@@ -856,6 +1043,15 @@ select opt in \
     ;;
   "Show Native VNC status")
     /usr/local/bin/jrmc-direct-vnc status
+    ;;
+  "Enable X2Go app mode")
+    /usr/local/bin/jrmc-x2go enable
+    ;;
+  "Disable X2Go app mode")
+    /usr/local/bin/jrmc-x2go disable
+    ;;
+  "Show X2Go status")
+    /usr/local/bin/jrmc-x2go status
     ;;
   "Show service status")
     /usr/local/bin/jrmc-mode status
