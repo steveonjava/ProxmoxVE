@@ -95,6 +95,8 @@ print(''.join(secrets.choice(alphabet) for _ in range(32)))
 PY
 )
 htpasswd -bc /etc/nginx/jrmc.htpasswd disabled "${tmp_password}" >/dev/null 2>&1
+chown root:www-data /etc/nginx/jrmc.htpasswd
+chmod 0640 /etc/nginx/jrmc.htpasswd
 
 cat <<'EOF' >/usr/local/bin/jrmc-vnc-start
 #!/usr/bin/env bash
@@ -182,7 +184,9 @@ fi
 
 htpasswd -bc "${JRMC_HTPASSWD}" "${username}" "${password}" >/dev/null 2>&1
 touch "${JRMC_BOOTSTRAP_FILE}"
-chmod 0640 "${JRMC_HTPASSWD}" "${JRMC_BOOTSTRAP_FILE}"
+chown root:www-data "${JRMC_HTPASSWD}"
+chmod 0640 "${JRMC_HTPASSWD}"
+chmod 0644 "${JRMC_BOOTSTRAP_FILE}"
 
 cat <<CREDS >/root/jrmc.creds
 JRiver Media Center Web Access
