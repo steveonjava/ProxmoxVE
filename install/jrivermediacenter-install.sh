@@ -75,7 +75,7 @@ JRMC_HTPASSWD="/etc/nginx/jrmc.htpasswd"
 JRMC_BOOTSTRAP_FILE="${CONFIG_DIR}/bootstrap-complete"
 JRMC_NATIVE_VNC_ENABLED="0"
 JRMC_VNC_PAM_SERVICE="jrmc-vnc"
-JRMC_NATIVE_VNC_SECURITY="X509Plain"
+JRMC_NATIVE_VNC_SECURITY="TLSPlain"
 JRMC_NATIVE_VNC_CERT="${CONFIG_DIR}/native-vnc-cert.pem"
 JRMC_NATIVE_VNC_KEY="${CONFIG_DIR}/native-vnc-key.pem"
 EOF
@@ -245,15 +245,23 @@ fi
 
 /usr/local/bin/jrmc-native-vnc-cert-ensure
 
-exec /usr/bin/x0vncserver \
-  -display "${DISPLAY}" \
-  -rfbport "${JRMC_NATIVE_VNC_PORT}" \
-  -SecurityTypes "${JRMC_NATIVE_VNC_SECURITY}" \
-  -PAMService "${JRMC_VNC_PAM_SERVICE}" \
-  -PlainUsers '*' \
-  -X509Cert "${JRMC_NATIVE_VNC_CERT}" \
-  -X509Key "${JRMC_NATIVE_VNC_KEY}" \
+args=(
+  -display "${DISPLAY}"
+  -rfbport "${JRMC_NATIVE_VNC_PORT}"
+  -SecurityTypes "${JRMC_NATIVE_VNC_SECURITY}"
+  -PAMService "${JRMC_VNC_PAM_SERVICE}"
+  -PlainUsers '*'
   -AlwaysShared
+)
+
+if [[ "${JRMC_NATIVE_VNC_SECURITY}" == X509* ]]; then
+  args+=(
+    -X509Cert "${JRMC_NATIVE_VNC_CERT}"
+    -X509Key "${JRMC_NATIVE_VNC_KEY}"
+  )
+fi
+
+exec /usr/bin/x0vncserver "${args[@]}"
 EOF
 chmod +x /usr/local/bin/jrmc-native-vnc-start
 
@@ -412,7 +420,11 @@ print_status() {
   if [[ "${state}" == "enabled" ]] && systemctl is-active --quiet jrmc-ui.service; then
     echo "endpoint: $(hostname -I | awk '{print $1}'):${JRMC_NATIVE_VNC_PORT}"
     echo "security: ${JRMC_NATIVE_VNC_SECURITY} using the same username/password as Dashboard"
-    echo "certificate: ${JRMC_NATIVE_VNC_CERT}"
+    if [[ "${JRMC_NATIVE_VNC_SECURITY}" == X509* ]]; then
+      echo "certificate: ${JRMC_NATIVE_VNC_CERT}"
+    else
+      echo "certificate: not required for this security mode"
+    fi
   else
     echo "endpoint: unavailable until native VNC is enabled and UI mode is running"
   fi
@@ -607,15 +619,14 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
   </div>
   <div class="card">
     <h2>Interactive Session</h2>
-    <p>After launching the UI, open noVNC in the browser or optionally enable secure native VNC for TigerVNC clients.</p>
+    <p>After launching the UI, open noVNC in the browser or optionally enable secure native VNC for compatible desktop VNC clients.</p>
     <div class="actions">
       <a href="/novnc/vnc.html?autoconnect=1&resize=remote&path=/websockify">Open noVNC</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=enable-direct-vnc">Enable Native VNC</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=disable-direct-vnc">Disable Native VNC</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=direct-vnc-status">Native VNC Status</a>
     </div>
-    <p>Secure native VNC listens on port <code>5902</code>, accepts the same Dashboard username and password, and is only reachable while JRMC UI mode is active.</p>
-    <p>For TigerVNC clients, download the current certificate: <a class="alt" href="/dashboard/native-vnc-cert.pem">native-vnc-cert.pem</a></p>
+    <p>Secure native VNC listens on port <code>5902</code>, uses TLS-encrypted username/password authentication with the same Dashboard credentials, and is only reachable while JRMC UI mode is active. No client certificate import is required.</p>
   </div>
   <div class="card">
     <h2>Activation</h2>
