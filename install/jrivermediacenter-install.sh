@@ -56,6 +56,23 @@ fi
 passwd -l "${APP_USER}" >/dev/null 2>&1 || true
 msg_ok "Created Service User"
 
+cat <<EOF >/usr/local/bin/jrmc-installjrmc
+#!/usr/bin/env bash
+set -euo pipefail
+
+tmp_sudoers="/etc/sudoers.d/${APP_USER}-installjrmc"
+cleanup() {
+  rm -f "${tmp_sudoers}"
+}
+trap cleanup EXIT
+
+echo "${APP_USER} ALL=(ALL) NOPASSWD: ALL" >"${tmp_sudoers}"
+chmod 0440 "${tmp_sudoers}"
+
+exec runuser -l "${APP_USER}" -- /usr/local/bin/installJRMC "$@"
+EOF
+chmod +x /usr/local/bin/jrmc-installjrmc
+
 msg_info "Preparing Runtime Directories"
 install -d -m 700 -o "${APP_USER}" -g "${APP_USER}" \
   "${APP_HOME}/.vnc" \
@@ -96,7 +113,7 @@ chmod +x /usr/local/bin/installJRMC
 msg_ok "Downloaded installJRMC"
 
 msg_info "Installing ${APP} 35 (this may take several minutes)"
-$STD runuser -l "${APP_USER}" -- /usr/local/bin/installJRMC \
+$STD /usr/local/bin/jrmc-installjrmc \
   --install=repo \
   --yes \
   --no-update
@@ -1061,7 +1078,7 @@ select opt in \
     /usr/local/bin/jrmc-activate "$mjr"
     ;;
   "Update JRiver Media Center")
-    runuser -l jriver -- /usr/local/bin/installJRMC \
+    /usr/local/bin/jrmc-installjrmc \
       --install=repo \
       --yes
     echo "Update complete."
