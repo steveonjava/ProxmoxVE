@@ -556,7 +556,10 @@ EOF
 
 rm -f /tmp/.X*-lock /tmp/.X11-unix/X*
 systemctl daemon-reload
-systemctl enable --now fcgiwrap.socket nginx jrmc-mediaserver.service
+systemctl enable --now fcgiwrap.socket
+systemctl enable nginx jrmc-mediaserver.service
+systemctl restart nginx
+systemctl restart jrmc-mediaserver.service
 msg_ok "Configured Browser-first JRMC access on https://IP:${JRMC_WEB_PORT}/setup/"
 
 msg_info "Creating Helper Commands"
