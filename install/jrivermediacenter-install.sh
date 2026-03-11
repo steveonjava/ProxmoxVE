@@ -62,14 +62,14 @@ set -euo pipefail
 
 tmp_sudoers="/etc/sudoers.d/${APP_USER}-installjrmc"
 cleanup() {
-  rm -f "${tmp_sudoers}"
+  rm -f "\${tmp_sudoers}"
 }
 trap cleanup EXIT
 
-echo "${APP_USER} ALL=(ALL) NOPASSWD: ALL" >"${tmp_sudoers}"
-chmod 0440 "${tmp_sudoers}"
+echo "${APP_USER} ALL=(ALL) NOPASSWD: ALL" >"\${tmp_sudoers}"
+chmod 0440 "\${tmp_sudoers}"
 
-exec runuser -l "${APP_USER}" -- /usr/local/bin/installJRMC "$@"
+exec runuser -l "${APP_USER}" -- /usr/local/bin/installJRMC "\$@"
 EOF
 chmod +x /usr/local/bin/jrmc-installjrmc
 
