@@ -409,7 +409,7 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
   <div class="card">
     <h2>Interactive Session</h2>
     <p>After launching the UI, open noVNC:</p>
-    <p><a href="/novnc/vnc.html?autoconnect=1&resize=remote&path=websockify">Open noVNC</a></p>
+    <p><a href="/novnc/vnc.html?autoconnect=1&resize=remote&path=/websockify">Open noVNC</a></p>
   </div>
   <div class="card">
     <h2>Activation</h2>
