@@ -45,6 +45,10 @@
       "type": "info"
     },
     {
+      "text": "Dashboard can optionally enable secure native VNC access on port 5902 while UI mode is active. Native VNC is intended for TigerVNC-compatible clients and uses the same username and password as the Dashboard.",
+      "type": "info"
+    },
+    {
       "text": "Run `jrmc-configure` for local administration, `jrmc-mode` to switch between Media Server and UI modes, and `jrmc-activate /path/to/file.mjr` to import a license restore file.",
       "type": "info"
     },
