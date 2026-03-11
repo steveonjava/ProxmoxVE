@@ -86,7 +86,14 @@ $STD runuser -l "${APP_USER}" -- /usr/local/bin/installJRMC \
 msg_ok "Installed ${APP} 35"
 
 msg_info "Configuring ${APP_ACRONYM} Runtime"
-tmp_password=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)
+tmp_password=$(python3 - <<'PY'
+import secrets
+import string
+
+alphabet = string.ascii_letters + string.digits
+print(''.join(secrets.choice(alphabet) for _ in range(32)))
+PY
+)
 htpasswd -bc /etc/nginx/jrmc.htpasswd disabled "${tmp_password}" >/dev/null 2>&1
 
 cat <<'EOF' >/usr/local/bin/jrmc-vnc-start
