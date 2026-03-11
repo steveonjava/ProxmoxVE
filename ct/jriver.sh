@@ -6,7 +6,7 @@
 
 source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/build.func)
 
-APP="JRiver"
+APP="JRiver Media Center"
 var_tags="${var_tags:-media}"
 var_cpu="${var_cpu:-4}"
 var_ram="${var_ram:-4096}"
@@ -53,7 +53,8 @@ description
 
 msg_ok "Completed successfully!\n"
 echo -e "${CREATING}${GN}${APP} setup has been successfully initialized!${CL}"
-echo -e "${INFO}${YW} Access JRiver Media Center via VNC on port 5901:${CL}"
-echo -e "${TAB}${GATEWAY}${BGN}vnc://${IP}:5901${CL}"
-echo -e "${INFO}${YW} Or use the Proxmox console for terminal access.${CL}"
+echo -e "${INFO}${YW} Open the browser setup page:${CL}"
+echo -e "${TAB}${GATEWAY}${BGN}https://${IP}:5800/setup/${CL}"
+echo -e "${INFO}${YW} Default mode is Media Server; launch the interactive UI from the Dashboard when needed.${CL}"
+echo -e "${INFO}${YW} Import .mjr license files with ${BGN}jrmc-activate /path/to/file.mjr${CL}${YW}.${CL}"
 echo -e "${INFO}${YW} A JRiver Media Center license is required: https://www.jriver.com/${CL}"
