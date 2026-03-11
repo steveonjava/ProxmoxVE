@@ -160,6 +160,12 @@ set -euo pipefail
 source /etc/default/jrmc
 export HOME="${JRMC_HOME}"
 export USER="${JRMC_USER}"
+export DISPLAY=":${JRMC_DISPLAY}"
+
+for _i in $(seq 1 30); do
+  xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1 && break
+  sleep 0.5
+done
 
 exec /usr/bin/mediacenter35 /MediaServer
 EOF
@@ -313,7 +319,8 @@ case "${mode}" in
     echo "JRMC UI mode started."
     ;;
   mediaserver)
-    systemctl stop jrmc-native-vnc.service jrmc-ui.service jrmc-websockify.service jrmc-vnc.service || true
+    systemctl stop jrmc-native-vnc.service jrmc-ui.service jrmc-websockify.service || true
+    systemctl start jrmc-vnc.service
     systemctl restart jrmc-mediaserver.service
     echo "JRMC Media Server mode started."
     ;;
@@ -323,6 +330,7 @@ case "${mode}" in
     ;;
   stop-server)
     systemctl stop jrmc-mediaserver.service || true
+    systemctl stop jrmc-vnc.service || true
     echo "JRMC Media Server mode stopped."
     ;;
   status)
@@ -376,6 +384,8 @@ PY
 
 restart_ui_stack_if_needed() {
   local ui_active=0
+  source /etc/default/jrmc
+
   if systemctl is-active --quiet jrmc-ui.service; then
     ui_active=1
   fi
@@ -729,7 +739,7 @@ PartOf=jrmc-ui.service
 Type=forking
 User=${APP_USER}
 ExecStart=/usr/local/bin/jrmc-native-vnc-start
-ExecStop=/usr/bin/pkill -u ${APP_USER} -f '^/usr/bin/x0vncserver .* -rfbport ${JRMC_NATIVE_VNC_PORT}($| )'
+ExecStop=-/usr/bin/pkill -u ${APP_USER} -f '^/usr/bin/x0vncserver .* -rfbport ${JRMC_NATIVE_VNC_PORT}($| )'
 Restart=on-failure
 RestartSec=5
 
@@ -774,7 +784,8 @@ EOF
 cat <<EOF >/etc/systemd/system/jrmc-mediaserver.service
 [Unit]
 Description=JRiver Media Center Media Server mode
-After=network.target
+After=network.target jrmc-vnc.service
+Requires=jrmc-vnc.service
 
 [Service]
 Type=simple
