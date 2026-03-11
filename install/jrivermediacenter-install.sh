@@ -210,6 +210,7 @@ openssl req -x509 -nodes -newkey rsa:2048 -sha256 -days 825 \
   -config "${tmp_cfg}" \
   -extensions v3_req >/dev/null 2>&1
 
+chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_NATIVE_VNC_CERT}" "${JRMC_NATIVE_VNC_KEY}"
 chmod 0644 "${JRMC_NATIVE_VNC_CERT}"
 chmod 0600 "${JRMC_NATIVE_VNC_KEY}"
 rm -f "${tmp_cfg}"
@@ -725,10 +726,10 @@ Requires=jrmc-ui.service
 PartOf=jrmc-ui.service
 
 [Service]
-Type=simple
+Type=forking
 User=${APP_USER}
 ExecStart=/usr/local/bin/jrmc-native-vnc-start
-ExecStop=/bin/kill -TERM \$MAINPID
+ExecStop=/usr/bin/pkill -u ${APP_USER} -f '^/usr/bin/x0vncserver .* -rfbport ${JRMC_NATIVE_VNC_PORT}($| )'
 Restart=on-failure
 RestartSec=5
 
