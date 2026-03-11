@@ -45,11 +45,7 @@
       "type": "info"
     },
     {
-      "text": "Dashboard can optionally enable secure native VNC access on port 5902 while UI mode is active. Native VNC uses TLS-encrypted username/password authentication for Remmina, TigerVNC, and other compatible clients, with the same username and password as the Dashboard and no client certificate import required.",
-      "type": "info"
-    },
-    {
-      "text": "Dashboard can optionally enable X2Go application mode over SSH port 22. Use username jriver with the same Dashboard password, and configure your X2Go client for a rootless single application command of jrmc-x2go-launch.",
+      "text": "Dashboard can optionally enable secure native VNC access on port 5902 while UI mode is active. Native VNC is intended for TigerVNC-compatible clients and uses the same username and password as the Dashboard.",
       "type": "info"
     },
     {
