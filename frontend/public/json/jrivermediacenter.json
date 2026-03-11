@@ -1,0 +1,56 @@
+{
+  "name": "JRiver Media Center",
+  "slug": "jrivermediacenter",
+  "categories": [
+    13
+  ],
+  "date_created": "2026-03-10",
+  "type": "ct",
+  "updateable": true,
+  "privileged": false,
+  "interface_port": 5800,
+  "documentation": "https://wiki.jriver.com/index.php/Linux",
+  "website": "https://www.jriver.com/",
+  "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/jriver.webp",
+  "config_path": "",
+  "description": "JRiver Media Center is a comprehensive media management application for audio, video, images, and television. This LXC runs MC35 on Debian 13 with browser-based noVNC access over HTTPS, while Media Server mode runs by default for more fault-tolerant daily use.",
+  "install_methods": [
+    {
+      "type": "default",
+      "script": "ct/jrivermediacenter.sh",
+      "resources": {
+        "cpu": 4,
+        "ram": 4096,
+        "hdd": 20,
+        "os": "Debian",
+        "version": "13"
+      }
+    }
+  ],
+  "default_credentials": {
+    "username": "Set on first visit",
+    "password": "Set on first visit"
+  },
+  "notes": [
+    {
+      "text": "A JRiver Media Center license is required. Purchase at https://www.jriver.com/",
+      "type": "warning"
+    },
+    {
+      "text": "Open https://CONTAINER_IP:5800/setup/ to create the initial web credentials for the JRMC Dashboard and noVNC access. The HTTPS certificate is self-signed.",
+      "type": "info"
+    },
+    {
+      "text": "The container starts in Media Server mode. Use the Dashboard to launch the full JRMC UI only when interactive administration is needed.",
+      "type": "info"
+    },
+    {
+      "text": "Run `jrmc-configure` for local administration, `jrmc-mode` to switch between Media Server and UI modes, and `jrmc-activate /path/to/file.mjr` to import a license restore file.",
+      "type": "info"
+    },
+    {
+      "text": "Installation uses the installJRMC community script (https://github.com/cryobry/installJRMC) for JRiver package installation and updates, while this LXC manages noVNC, web access, and service mode switching locally.",
+      "type": "info"
+    }
+  ]
+}
