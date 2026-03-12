@@ -31,17 +31,16 @@ $STD apt install -y \
   apache2-utils \
   dbus-x11 \
   fcgiwrap \
-  libpam-pwdfile \
   nginx \
   novnc \
   openbox \
   openssl \
   python3 \
   ssl-cert \
-  tigervnc-scraping-server \
   tigervnc-standalone-server \
   websockify \
   x11-utils \
+  x11vnc \
   x11-xserver-utils \
   xauth \
   xdotool \
@@ -77,9 +76,10 @@ JRMC_WEB_HTPASSWD="/etc/nginx/jrmc.htpasswd"
 JRMC_VNC_HTPASSWD="${CONFIG_DIR}/native-vnc.htpasswd"
 JRMC_BOOTSTRAP_FILE="${CONFIG_DIR}/bootstrap-complete"
 JRMC_NATIVE_VNC_ENABLED="0"
-JRMC_VNC_PAM_SERVICE="jrmc-vnc"
-JRMC_NATIVE_VNC_SECURITY="TLSPlain"
-JRMC_WINDOW_FIT_LOG="/tmp/jrmc-window-fit.log"
+JRMC_NATIVE_VNC_SECURITY="VeNCrypt Plain"
+JRMC_NATIVE_VNC_CERT="${CONFIG_DIR}/native-vnc-cert.pem"
+JRMC_NATIVE_VNC_KEY="${CONFIG_DIR}/native-vnc-key.pem"
+JRMC_NATIVE_VNC_PEM="${CONFIG_DIR}/native-vnc-server.pem"
 JRMC_NATIVE_VNC_LOG="/tmp/jrmc-native-vnc.log"
 EOF
 chmod 0644 /etc/default/jrmc
@@ -157,26 +157,6 @@ export HOME="${JRMC_HOME}"
 export USER="${JRMC_USER}"
 export DISPLAY=":${JRMC_DISPLAY}"
 export XAUTHORITY="${JRMC_HOME}/.Xauthority"
-
-log_debug() {
-  local message="$1"
-  printf '%s [%s] %s\n' "$(date '+%F %T')" "$$" "${message}" >>"${JRMC_WINDOW_FIT_LOG}"
-}
-
-window_geometry() {
-  local wid="$1"
-  xwininfo -id "${wid}" 2>/dev/null | awk '
-    /Absolute upper-left X:/ { x=$4 }
-    /Absolute upper-left Y:/ { y=$4 }
-    /Width:/ { width=$2 }
-    /Height:/ { height=$2 }
-    END {
-      if (width && height) {
-        printf "x=%s y=%s width=%s height=%s", x, y, width, height
-      }
-    }
-  '
-}
 
 if pgrep -u "${JRMC_USER}" -f '/usr/bin/openbox' >/dev/null 2>&1; then
   exit 0
@@ -289,7 +269,6 @@ fit_window() {
   local height="$3"
   local _attempt
 
-  log_debug "fit start wid=${wid} target=${width}x${height} current=$(window_geometry "${wid}")"
   for _attempt in 1 2; do
     xdotool windowactivate "${wid}" >/dev/null 2>&1 || true
     xdotool windowraise "${wid}" >/dev/null 2>&1 || true
@@ -303,25 +282,19 @@ fit_window() {
     xdotool windowstate --add MAXIMIZED_VERT "${wid}" >/dev/null 2>&1 || true
     xdotool windowstate --add MAXIMIZED_HORZ "${wid}" >/dev/null 2>&1 || true
     sleep 0.2
-    log_debug "fit attempt=${_attempt} wid=${wid} now=$(window_geometry "${wid}")"
   done
 }
-
-log_debug "window-fit start app_pid=${app_pid} display=${DISPLAY}"
-trap 'log_debug "window-fit exit app_pid=${app_pid}"' EXIT
 
 window_id=""
 for _i in $(seq 1 120); do
   window_id="$(find_window_id || true)"
   if [[ -n "${window_id}" ]]; then
-    log_debug "initial window_id=${window_id} props=$(window_properties "${window_id}" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g')"
     break
   fi
   sleep 0.5
 done
 
 if [[ -z "${window_id}" ]]; then
-  log_debug "no window found for app_pid=${app_pid}"
   exit 0
 fi
 
@@ -329,7 +302,6 @@ last_size=""
 while kill -0 "${app_pid}" >/dev/null 2>&1; do
   current_size="$(desktop_size || true)"
   if [[ -z "${current_size}" ]]; then
-    log_debug "desktop size unavailable"
     sleep 1
     continue
   fi
@@ -337,27 +309,20 @@ while kill -0 "${app_pid}" >/dev/null 2>&1; do
   if [[ "${current_size}" != "${last_size}" ]]; then
     current_window_id="$(find_window_id || true)"
     if [[ -n "${current_window_id:-}" ]]; then
-      if [[ "${current_window_id}" != "${window_id}" ]]; then
-        log_debug "window id changed ${window_id} -> ${current_window_id}"
-      fi
       window_id="${current_window_id}"
     fi
 
     read -r width height <<<"${current_size}"
-    log_debug "desktop size changed ${last_size:-unset} -> ${current_size} using wid=${window_id}"
     fit_window "${window_id}" "${width}" "${height}"
     last_size="${current_size}"
   fi
 
   if ! xwininfo -id "${window_id}" >/dev/null 2>&1; then
-    log_debug "window id ${window_id} no longer valid; searching again"
     window_id="$(find_window_id || true)"
     if [[ -z "${window_id}" ]]; then
-      log_debug "window not found after invalidation"
       sleep 1
       continue
     fi
-    log_debug "recovered window_id=${window_id}"
     last_size=""
   fi
 
@@ -414,6 +379,66 @@ exec /usr/bin/websockify 127.0.0.1:${JRMC_WEBSOCKIFY_PORT} 127.0.0.1:${JRMC_VNC_
 EOF
 chmod +x /usr/local/bin/jrmc-websockify-start
 
+cat <<'EOF' >/usr/local/bin/jrmc-native-vnc-cert-ensure
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/default/jrmc
+
+install -d -m 755 "$(dirname "${JRMC_NATIVE_VNC_CERT}")"
+
+if [[ ! -s "${JRMC_NATIVE_VNC_CERT}" || ! -s "${JRMC_NATIVE_VNC_KEY}" ]]; then
+  host_name="$(hostname -f 2>/dev/null || hostname)"
+  host_ip="$(hostname -I | awk '{print $1}')"
+  tmp_cfg="$(mktemp)"
+
+  cat >"${tmp_cfg}" <<CFG
+[req]
+prompt = no
+distinguished_name = dn
+x509_extensions = v3_req
+
+[dn]
+CN = ${host_name}
+
+[v3_req]
+subjectAltName = DNS:${host_name}${host_ip:+,IP:${host_ip}}
+keyUsage = critical,digitalSignature,keyEncipherment
+extendedKeyUsage = serverAuth
+CFG
+
+  openssl req -x509 -nodes -newkey rsa:2048 -sha256 -days 825 \
+    -keyout "${JRMC_NATIVE_VNC_KEY}" \
+    -out "${JRMC_NATIVE_VNC_CERT}" \
+    -config "${tmp_cfg}" \
+    -extensions v3_req >/dev/null 2>&1
+
+  rm -f "${tmp_cfg}"
+fi
+
+cat "${JRMC_NATIVE_VNC_CERT}" "${JRMC_NATIVE_VNC_KEY}" >"${JRMC_NATIVE_VNC_PEM}"
+
+chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_NATIVE_VNC_CERT}" "${JRMC_NATIVE_VNC_KEY}" "${JRMC_NATIVE_VNC_PEM}"
+chmod 0644 "${JRMC_NATIVE_VNC_CERT}"
+chmod 0600 "${JRMC_NATIVE_VNC_KEY}" "${JRMC_NATIVE_VNC_PEM}"
+EOF
+chmod +x /usr/local/bin/jrmc-native-vnc-cert-ensure
+
+cat <<'EOF' >/usr/local/bin/jrmc-native-vnc-auth
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/default/jrmc
+
+IFS= read -r username || exit 1
+IFS= read -r password || exit 1
+
+if [[ ! "${username}" =~ ^[A-Za-z0-9._-]{3,32}$ ]]; then
+  exit 1
+fi
+
+htpasswd -vb "${JRMC_VNC_HTPASSWD}" "${username}" "${password}" >/dev/null 2>&1
+EOF
+chmod +x /usr/local/bin/jrmc-native-vnc-auth
+
 cat <<'EOF' >/usr/local/bin/jrmc-native-vnc-start
 #!/usr/bin/env bash
 set -euo pipefail
@@ -424,26 +449,29 @@ export USER="${JRMC_USER}"
 export DISPLAY=":${JRMC_DISPLAY}"
 export XAUTHORITY="${JRMC_HOME}/.Xauthority"
 
-: >"${JRMC_NATIVE_VNC_LOG}"
-exec > >(tee -a "${JRMC_NATIVE_VNC_LOG}") 2>&1
-echo "$(date '+%F %T') [$$] jrmc-native-vnc-start display=${DISPLAY} port=${JRMC_NATIVE_VNC_PORT} security=${JRMC_NATIVE_VNC_SECURITY}"
-
 for _i in $(seq 1 30); do
   xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1 && break
   sleep 0.5
 done
 
-exec /usr/bin/x0vncserver \
+rm -f "${JRMC_NATIVE_VNC_LOG}"
+/usr/local/bin/jrmc-native-vnc-cert-ensure
+
+exec /usr/bin/x11vnc \
   -display "${DISPLAY}" \
-  -fg \
+  -auth "${XAUTHORITY}" \
   -rfbport "${JRMC_NATIVE_VNC_PORT}" \
-  -AlwaysShared=1 \
-  -NeverShared=0 \
-  -AcceptSetDesktopSize=1 \
+  -shared \
+  -forever \
+  -xrandr newfbsize \
   -desktop "JRiver Media Center" \
-  -SecurityTypes "${JRMC_NATIVE_VNC_SECURITY}" \
-  -PAMService "${JRMC_VNC_PAM_SERVICE}" \
-  -PlainUsers '*'
+  -ssl "${JRMC_NATIVE_VNC_PEM}" \
+  -vencrypt plain:support \
+  -anontls never \
+  -unixpw '*' \
+  -unixpw_cmd /usr/local/bin/jrmc-native-vnc-auth \
+  -noxdamage \
+  -o "${JRMC_NATIVE_VNC_LOG}"
 EOF
 chmod +x /usr/local/bin/jrmc-native-vnc-start
 
@@ -483,7 +511,7 @@ Password: ${password}
 
 Default mode: Media Server
 Interactive UI: open Dashboard, then Launch JRMC UI.
-Native VNC: optional from Dashboard on port ${JRMC_NATIVE_VNC_PORT} while UI mode is active for Remmina/TigerVNC-style desktop clients with client-driven desktop resize.
+Native VNC: optional from Dashboard on port ${JRMC_NATIVE_VNC_PORT} while UI mode is active for broader Remmina/TigerVNC compatibility using the same Dashboard credentials.
 CREDS
 
 systemctl reload nginx
@@ -605,7 +633,7 @@ print_status() {
   if [[ "${state}" == "enabled" ]] && systemctl is-active --quiet jrmc-native-vnc.service; then
     echo "endpoint: $(hostname -I | awk '{print $1}'):${JRMC_NATIVE_VNC_PORT}"
     echo "security: ${JRMC_NATIVE_VNC_SECURITY} using the same username/password as Dashboard"
-    echo "backend: x0vncserver desktop-sharing backend with SetDesktopSize support"
+    echo "backend: x11vnc shared-display backend for broader native-client compatibility"
   else
     echo "endpoint: unavailable until native VNC is enabled and UI mode is running"
   fi
@@ -615,7 +643,7 @@ case "${action}" in
   enable)
     update_default JRMC_NATIVE_VNC_ENABLED 1
     restart_ui_stack_if_needed
-    echo "Native VNC enabled. Port ${JRMC_NATIVE_VNC_PORT} will accept the same Dashboard username/password with ${JRMC_NATIVE_VNC_SECURITY} while UI mode is active. If the UI was already running, the native desktop-sharing service was started immediately."
+    echo "Native VNC enabled. Port ${JRMC_NATIVE_VNC_PORT} will accept the same Dashboard username/password with ${JRMC_NATIVE_VNC_SECURITY} while UI mode is active. If the UI was already running, the x11vnc shared-display service was started immediately."
     ;;
   disable)
     update_default JRMC_NATIVE_VNC_ENABLED 0
@@ -807,8 +835,8 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=disable-direct-vnc">Disable Native VNC</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=direct-vnc-status">Native VNC Status</a>
     </div>
-    <p>Secure native VNC listens on port <code>5902</code>, uses TLS-encrypted username/password authentication with the same Dashboard credentials, and is only reachable while JRMC UI mode is active. Browser noVNC keeps the dedicated resize-capable backend, while native desktop clients use a separate TigerVNC desktop-sharing backend that accepts client desktop resize requests.</p>
-    <p>Changing native VNC state while the UI is already running starts or stops the native desktop-sharing service without interrupting the browser session.</p>
+    <p>Secure native VNC listens on port <code>5902</code>, uses VeNCrypt username/password authentication with the same Dashboard credentials, and is only reachable while JRMC UI mode is active. Browser noVNC keeps the dedicated Xtigervnc backend, while native desktop clients use a separate x11vnc shared-display backend for broader compatibility.</p>
+    <p>Changing native VNC state while the UI is already running starts or stops the native x11vnc service without interrupting the browser session.</p>
   </div>
   <div class="card">
     <h2>Activation</h2>
@@ -882,13 +910,6 @@ server {
 EOF
 ln -sf /etc/nginx/sites-available/jrmc.conf /etc/nginx/sites-enabled/jrmc.conf
 rm -f /etc/nginx/sites-enabled/default
-
-cat <<'EOF' >/etc/pam.d/jrmc-vnc
-auth required pam_pwdfile.so pwdfile=/etc/jrmc/native-vnc.htpasswd
-account required pam_permit.so
-session required pam_permit.so
-password required pam_deny.so
-EOF
 
 cat <<'EOF' >/etc/sudoers.d/jrmc-web
 www-data ALL=(root) NOPASSWD: /usr/local/bin/jrmc-mode, /usr/local/bin/jrmc-direct-vnc, /usr/local/bin/jrmc-set-web-credentials
@@ -1002,7 +1023,7 @@ echo
 echo "Web setup URL:        https://<container-ip>:5800/setup/"
 echo "Default mode:         Media Server"
 echo "Interactive UI:       noVNC via Dashboard with remote desktop resize"
-echo "Native VNC:           Optional on port 5902 with Remmina-friendly desktop client compatibility while UI mode is active"
+echo "Native VNC:           Optional on port 5902 with x11vnc-based native client compatibility while UI mode is active"
 echo
 
 PS3="Select an option: "
