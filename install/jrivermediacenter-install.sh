@@ -211,9 +211,53 @@ export USER="${JRMC_USER}"
 export DISPLAY=":${JRMC_DISPLAY}"
 export XAUTHORITY="${JRMC_HOME}/.Xauthority"
 
+find_window_id() {
+  local wid name
+
+  while read -r wid; do
+    name="$(xdotool getwindowname "${wid}" 2>/dev/null || true)"
+    if [[ "${name}" == "JRiver Media Center 35" ]]; then
+      echo "${wid}"
+      return 0
+    fi
+  done < <(xdotool search --onlyvisible --pid "${app_pid}" 2>/dev/null || true)
+
+  while read -r wid; do
+    name="$(xdotool getwindowname "${wid}" 2>/dev/null || true)"
+    if [[ "${name}" == "JRiver Media Center 35" ]]; then
+      echo "${wid}"
+      return 0
+    fi
+  done < <(xdotool search --onlyvisible --class 'Media_Center_35' 2>/dev/null || true)
+
+  return 1
+}
+
+desktop_size() {
+  xwininfo -root 2>/dev/null | awk '
+    /Width:/ { width=$2 }
+    /Height:/ { height=$2 }
+    END {
+      if (width && height) {
+        printf "%s %s\n", width, height
+      }
+    }
+  '
+}
+
+fit_window() {
+  local wid="$1"
+  local width="$2"
+  local height="$3"
+
+  xdotool windowmove "${wid}" 0 0 >/dev/null 2>&1 || true
+  xdotool windowsize "${wid}" "${width}" "${height}" >/dev/null 2>&1 || true
+  xdotool windowmove "${wid}" 0 0 >/dev/null 2>&1 || true
+}
+
 window_id=""
 for _i in $(seq 1 120); do
-  window_id="$(xdotool search --onlyvisible --pid "${app_pid}" 2>/dev/null | head -n1 || true)"
+  window_id="$(find_window_id || true)"
   if [[ -n "${window_id}" ]]; then
     break
   fi
@@ -224,9 +268,30 @@ if [[ -z "${window_id}" ]]; then
   exit 0
 fi
 
+last_size=""
 while kill -0 "${app_pid}" >/dev/null 2>&1; do
-  wmctrl -i -r "${window_id}" -b add,fullscreen >/dev/null 2>&1 || true
-  sleep 2
+  current_size="$(desktop_size || true)"
+  if [[ -z "${current_size}" ]]; then
+    sleep 1
+    continue
+  fi
+
+  if [[ "${current_size}" != "${last_size}" ]]; then
+    read -r width height <<<"${current_size}"
+    fit_window "${window_id}" "${width}" "${height}"
+    last_size="${current_size}"
+  fi
+
+  if ! xwininfo -id "${window_id}" >/dev/null 2>&1; then
+    window_id="$(find_window_id || true)"
+    if [[ -z "${window_id}" ]]; then
+      sleep 1
+      continue
+    fi
+    last_size=""
+  fi
+
+  sleep 1
 done
 EOF
 chmod +x /usr/local/bin/jrmc-window-fit
