@@ -45,7 +45,7 @@
       "type": "info"
     },
     {
-      "text": "Dashboard can optionally enable native RDP access on port 3389 for Remmina and similar RDP clients. Sign in as jriver with the same password used for the Dashboard.",
+      "text": "Dashboard can optionally enable native RDP access on port 3389 for Remmina and similar RDP clients. Sign in with the same Dashboard username and password.",
       "type": "info"
     },
     {

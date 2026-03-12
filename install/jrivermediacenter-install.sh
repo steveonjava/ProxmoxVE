@@ -542,6 +542,74 @@ export DISPLAY=":${JRMC_DISPLAY}"
 EOF
 chmod +x /usr/local/bin/jrmc-native-vnc-stop
 
+cat <<'EOF' >/usr/local/bin/jrmc-sync-rdp-user
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/default/jrmc
+
+username="${1:-}"
+password="${2:-}"
+
+if [[ -z "${username}" || -z "${password}" ]]; then
+  echo "Usage: jrmc-sync-rdp-user <username> <password>" >&2
+  exit 1
+fi
+
+if [[ ! "${username}" =~ ^[A-Za-z0-9._-]{3,32}$ ]]; then
+  echo "Username must match [A-Za-z0-9._-] and be 3-32 chars." >&2
+  exit 1
+fi
+
+service_uid="$(id -u "${JRMC_USER}")"
+service_gid="$(id -g "${JRMC_USER}")"
+current_rdp_user="${JRMC_NATIVE_RDP_USER:-${JRMC_USER}}"
+
+if id -u "${username}" >/dev/null 2>&1; then
+  existing_uid="$(id -u "${username}")"
+  if [[ "${existing_uid}" != "${service_uid}" ]]; then
+    echo "Username conflicts with an existing system account." >&2
+    exit 1
+  fi
+fi
+
+if [[ "${current_rdp_user}" != "${JRMC_USER}" ]] && [[ "${current_rdp_user}" != "${username}" ]] && id -u "${current_rdp_user}" >/dev/null 2>&1; then
+  passwd -l "${current_rdp_user}" >/dev/null 2>&1 || true
+fi
+
+if [[ "${username}" != "${JRMC_USER}" ]]; then
+  if ! id -u "${username}" >/dev/null 2>&1; then
+    useradd -M -o -u "${service_uid}" -g "${service_gid}" -d "${JRMC_HOME}" -s /bin/bash "${username}"
+  fi
+  usermod -o -u "${service_uid}" -g "${service_gid}" -d "${JRMC_HOME}" -s /bin/bash "${username}" >/dev/null 2>&1 || true
+fi
+
+printf '%s:%s\n' "${JRMC_USER}" "${password}" | chpasswd
+if [[ "${username}" != "${JRMC_USER}" ]]; then
+  printf '%s:%s\n' "${username}" "${password}" | chpasswd
+fi
+
+python3 - "$username" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path('/etc/default/jrmc')
+value = sys.argv[1]
+lines = path.read_text().splitlines()
+new_lines = []
+found = False
+for line in lines:
+    if line.startswith('JRMC_NATIVE_RDP_USER='):
+        new_lines.append(f'JRMC_NATIVE_RDP_USER="{value}"')
+        found = True
+    else:
+        new_lines.append(line)
+if not found:
+    new_lines.append(f'JRMC_NATIVE_RDP_USER="{value}"')
+path.write_text("\n".join(new_lines) + "\n")
+PY
+EOF
+chmod +x /usr/local/bin/jrmc-sync-rdp-user
+
 cat <<'EOF' >/usr/local/bin/jrmc-set-web-credentials
 #!/usr/bin/env bash
 set -euo pipefail
@@ -560,9 +628,11 @@ if [[ ! "${username}" =~ ^[A-Za-z0-9._-]{3,32}$ ]]; then
   exit 1
 fi
 
+/usr/local/bin/jrmc-sync-rdp-user "${username}" "${password}"
+source /etc/default/jrmc
+
 htpasswd -b -c -5 "${JRMC_WEB_HTPASSWD}" "${username}" "${password}" >/dev/null 2>&1
 htpasswd -b -c -5 "${JRMC_VNC_HTPASSWD}" "${username}" "${password}" >/dev/null 2>&1
-printf '%s:%s\n' "${JRMC_NATIVE_RDP_USER}" "${password}" | chpasswd
 touch "${JRMC_BOOTSTRAP_FILE}"
 chown root:www-data "${JRMC_WEB_HTPASSWD}"
 chmod 0640 "${JRMC_WEB_HTPASSWD}"
@@ -579,7 +649,7 @@ Password: ${password}
 
 Default mode: Media Server
 Interactive UI: open Dashboard, then Launch JRMC UI.
-Native RDP: optional from Dashboard on port ${JRMC_NATIVE_RDP_PORT} for Remmina using user ${JRMC_NATIVE_RDP_USER} and the same password as Dashboard.
+Native RDP: optional from Dashboard on port ${JRMC_NATIVE_RDP_PORT} for Remmina using the same username and password as Dashboard.
 Native VNC: optional from Dashboard on port ${JRMC_NATIVE_VNC_PORT} while UI mode is active for TigerVNC compatibility using TLSPlain and the same Dashboard credentials.
 CREDS
 
@@ -789,7 +859,7 @@ case "${action}" in
   enable)
     update_default JRMC_NATIVE_RDP_ENABLED 1
     systemctl enable --now xrdp-sesman.service xrdp.service
-    echo "Native RDP enabled. Connect to port ${JRMC_NATIVE_RDP_PORT} with username ${JRMC_NATIVE_RDP_USER} and the same password used for Dashboard."
+    echo "Native RDP enabled. Connect to port ${JRMC_NATIVE_RDP_PORT} with the same username and password used for Dashboard."
     ;;
   disable)
     update_default JRMC_NATIVE_RDP_ENABLED 0
@@ -987,7 +1057,7 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=disable-direct-vnc">Disable Native VNC</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=direct-vnc-status">Native VNC Status</a>
     </div>
-    <p>Native RDP listens on port <code>3389</code> for Remmina and other RDP clients. Sign in as <code>jriver</code> with the same password used for Dashboard.</p>
+    <p>Native RDP listens on port <code>3389</code> for Remmina and other RDP clients. Sign in with the same username and password used for Dashboard.</p>
     <p>Native VNC listens on port <code>5902</code>, uses <code>TLSPlain</code> with the same Dashboard username and password, and is only reachable while JRMC UI mode is active. Browser noVNC keeps the dedicated Xtigervnc backend, while TigerVNC-compatible native clients use a separate <code>x0vncserver</code> desktop-sharing backend.</p>
     <p>Changing native VNC state while the UI is already running starts or stops the native desktop-sharing service without interrupting the browser session.</p>
   </div>
@@ -1200,7 +1270,7 @@ echo
 echo "Web setup URL:        https://<container-ip>:5800/setup/"
 echo "Default mode:         Media Server"
 echo "Interactive UI:       noVNC via Dashboard with remote desktop resize"
-echo "Native RDP:           Optional on port 3389 for Remmina using user ${APP_USER}"
+echo "Native RDP:           Optional on port 3389 for Remmina using the same Dashboard username"
 echo "Native VNC:           Optional on port 5902 with TLSPlain for TigerVNC while UI mode is active"
 echo
 
