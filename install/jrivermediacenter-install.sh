@@ -475,6 +475,17 @@ htpasswd -vb "${JRMC_VNC_HTPASSWD}" "${username}" "${password}" >/dev/null 2>&1
 EOF
 chmod +x /usr/local/bin/jrmc-native-vnc-auth
 
+cat <<'EOF' >/usr/local/bin/jrmc-native-vnc-clean
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/default/jrmc
+
+install -d -m 700 -o "${JRMC_USER}" -g "${JRMC_USER}" "${JRMC_HOME}/.config/tigervnc"
+find "${JRMC_HOME}/.config/tigervnc" -maxdepth 1 \( -type l -o -type f \) -name "*:${JRMC_DISPLAY}.pid" -delete 2>/dev/null || true
+rm -f "${JRMC_NATIVE_VNC_PIDFILE}"
+EOF
+chmod +x /usr/local/bin/jrmc-native-vnc-clean
+
 cat <<'EOF' >/usr/local/bin/jrmc-native-vnc-start
 #!/usr/bin/env bash
 set -euo pipefail
@@ -484,6 +495,8 @@ export HOME="${JRMC_HOME}"
 export USER="${JRMC_USER}"
 export DISPLAY=":${JRMC_DISPLAY}"
 export XAUTHORITY="${JRMC_HOME}/.Xauthority"
+
+/usr/local/bin/jrmc-native-vnc-clean
 
 for _i in $(seq 1 30); do
   xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1 && break
@@ -525,7 +538,7 @@ source /etc/default/jrmc
 export DISPLAY=":${JRMC_DISPLAY}"
 
 /usr/bin/x0vncserver -kill -display "${DISPLAY}" -rfbport "${JRMC_NATIVE_VNC_PORT}" >/dev/null 2>&1 || true
-rm -f "${JRMC_NATIVE_VNC_PIDFILE}"
+/usr/local/bin/jrmc-native-vnc-clean
 EOF
 chmod +x /usr/local/bin/jrmc-native-vnc-stop
 
@@ -1093,7 +1106,7 @@ Requires=jrmc-vnc.service
 [Service]
 Type=forking
 PIDFile=${CONFIG_DIR}/native-vnc.pid
-ExecStartPre=-/bin/rm -f ${CONFIG_DIR}/native-vnc.pid
+ExecStartPre=/usr/local/bin/jrmc-native-vnc-clean
 ExecStart=/usr/local/bin/jrmc-native-vnc-start
 ExecStop=/usr/local/bin/jrmc-native-vnc-stop
 Restart=on-failure
