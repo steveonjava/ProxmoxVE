@@ -459,7 +459,7 @@ rm -f "${JRMC_NATIVE_VNC_LOG}"
 
 exec /usr/bin/x11vnc \
   -display "${DISPLAY}" \
-  -auth "${XAUTHORITY}" \
+  -auth guess \
   -rfbport "${JRMC_NATIVE_VNC_PORT}" \
   -shared \
   -forever \
@@ -471,6 +471,7 @@ exec /usr/bin/x11vnc \
   -unixpw '*' \
   -unixpw_cmd /usr/local/bin/jrmc-native-vnc-auth \
   -noxdamage \
+  -noshm \
   -o "${JRMC_NATIVE_VNC_LOG}"
 EOF
 chmod +x /usr/local/bin/jrmc-native-vnc-start
@@ -942,7 +943,6 @@ Requires=jrmc-vnc.service
 
 [Service]
 Type=simple
-User=${APP_USER}
 ExecStart=/usr/local/bin/jrmc-native-vnc-start
 ExecStop=/bin/kill -TERM \$MAINPID
 Restart=on-failure
