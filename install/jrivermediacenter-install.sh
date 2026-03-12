@@ -1072,6 +1072,19 @@ password required pam_deny.so
 EOF
 
 sed -i 's/^port=.*/port=3389/' /etc/xrdp/xrdp.ini
+python3 - <<'PY'
+from pathlib import Path
+
+path = Path('/etc/xrdp/xrdp.ini')
+text = path.read_text()
+old = "[Xorg]\nname=Xorg\nlib=libxup.so\nusername=ask\npassword=ask\nport=3389\ncode=20\n"
+new = "[Xorg]\nname=Xorg\nlib=libxup.so\nusername=ask\npassword=ask\nport=-1\ncode=20\n"
+
+if old in text:
+  text = text.replace(old, new, 1)
+
+path.write_text(text)
+PY
 systemctl disable --now xrdp.service xrdp-sesman.service >/dev/null 2>&1 || true
 
 cat <<'EOF' >/etc/sudoers.d/jrmc-web
