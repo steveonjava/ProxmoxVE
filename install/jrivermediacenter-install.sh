@@ -463,7 +463,7 @@ exec /usr/bin/x11vnc \
   -rfbport "${JRMC_NATIVE_VNC_PORT}" \
   -shared \
   -forever \
-  -xrandr newfbsize \
+  -setdesktopsize \
   -desktop "JRiver Media Center" \
   -ssl "${JRMC_NATIVE_VNC_PEM}" \
   -vencrypt plain:support \
