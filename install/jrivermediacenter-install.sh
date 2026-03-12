@@ -71,7 +71,8 @@ JRMC_WEBSOCKIFY_PORT="${JRMC_WEBSOCKIFY_PORT}"
 JRMC_WEB_PORT="${JRMC_WEB_PORT}"
 JRMC_WIDTH="1440"
 JRMC_HEIGHT="900"
-JRMC_HTPASSWD="/etc/nginx/jrmc.htpasswd"
+JRMC_WEB_HTPASSWD="/etc/nginx/jrmc.htpasswd"
+JRMC_VNC_HTPASSWD="${CONFIG_DIR}/native-vnc.htpasswd"
 JRMC_BOOTSTRAP_FILE="${CONFIG_DIR}/bootstrap-complete"
 JRMC_NATIVE_VNC_ENABLED="0"
 JRMC_VNC_PAM_SERVICE="jrmc-vnc"
@@ -105,8 +106,11 @@ print(''.join(secrets.choice(alphabet) for _ in range(32)))
 PY
 )
 htpasswd -b -c -5 /etc/nginx/jrmc.htpasswd disabled "${tmp_password}" >/dev/null 2>&1
+htpasswd -b -c -5 "${CONFIG_DIR}/native-vnc.htpasswd" disabled "${tmp_password}" >/dev/null 2>&1
 chown root:www-data /etc/nginx/jrmc.htpasswd
 chmod 0640 /etc/nginx/jrmc.htpasswd
+chown "${APP_USER}:${APP_USER}" "${CONFIG_DIR}/native-vnc.htpasswd"
+chmod 0600 "${CONFIG_DIR}/native-vnc.htpasswd"
 
 cat <<'EOF' >/usr/local/bin/jrmc-vnc-start
 #!/usr/bin/env bash
@@ -283,10 +287,13 @@ if [[ ! "${username}" =~ ^[A-Za-z0-9._-]{3,32}$ ]]; then
   exit 1
 fi
 
-htpasswd -b -c -5 "${JRMC_HTPASSWD}" "${username}" "${password}" >/dev/null 2>&1
+htpasswd -b -c -5 "${JRMC_WEB_HTPASSWD}" "${username}" "${password}" >/dev/null 2>&1
+htpasswd -b -c -5 "${JRMC_VNC_HTPASSWD}" "${username}" "${password}" >/dev/null 2>&1
 touch "${JRMC_BOOTSTRAP_FILE}"
-chown root:www-data "${JRMC_HTPASSWD}"
-chmod 0640 "${JRMC_HTPASSWD}"
+chown root:www-data "${JRMC_WEB_HTPASSWD}"
+chmod 0640 "${JRMC_WEB_HTPASSWD}"
+chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_VNC_HTPASSWD}"
+chmod 0600 "${JRMC_VNC_HTPASSWD}"
 chmod 0644 "${JRMC_BOOTSTRAP_FILE}"
 
 cat <<CREDS >/root/jrmc.creds
@@ -710,7 +717,7 @@ ln -sf /etc/nginx/sites-available/jrmc.conf /etc/nginx/sites-enabled/jrmc.conf
 rm -f /etc/nginx/sites-enabled/default
 
 cat <<'EOF' >/etc/pam.d/jrmc-vnc
-auth required pam_pwdfile.so pwdfile=/etc/nginx/jrmc.htpasswd
+auth required pam_pwdfile.so pwdfile=/etc/jrmc/native-vnc.htpasswd
 account required pam_permit.so
 session required pam_permit.so
 password required pam_deny.so
