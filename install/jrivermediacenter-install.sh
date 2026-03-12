@@ -417,12 +417,18 @@ export USER="${JRMC_USER}"
 export DISPLAY="${DISPLAY:-:${JRMC_DISPLAY}}"
 export XAUTHORITY="${XAUTHORITY:-${JRMC_HOME}/.Xauthority}"
 
-if systemctl is-active --quiet jrmc-ui.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_UI_PIDFILE}" >/dev/null 2>&1; then
+service_is_busy() {
+  local state
+  state="$(systemctl show -p ActiveState --value "$1" 2>/dev/null || true)"
+  [[ "${state}" == "active" || "${state}" == "activating" || "${state}" == "reloading" ]]
+}
+
+if service_is_busy jrmc-ui.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_UI_PIDFILE}" >/dev/null 2>&1; then
   echo "JRMC shared UI mode is already active. Stop noVNC/native VNC before launching native RDP." >&2
   exit 1
 fi
 
-if systemctl is-active --quiet jrmc-mediaserver.service; then
+if service_is_busy jrmc-mediaserver.service; then
   echo "JRMC Media Server mode is still active. Stop it before launching native RDP." >&2
   exit 1
 fi
@@ -468,7 +474,13 @@ export HOME="${JRMC_HOME}"
 export USER="${JRMC_USER}"
 export DISPLAY=":${JRMC_DISPLAY}"
 
-if systemctl is-active --quiet xrdp.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_RDP_PIDFILE}" >/dev/null 2>&1; then
+service_is_busy() {
+  local state
+  state="$(systemctl show -p ActiveState --value "$1" 2>/dev/null || true)"
+  [[ "${state}" == "active" || "${state}" == "activating" || "${state}" == "reloading" ]]
+}
+
+if service_is_busy xrdp.service || service_is_busy xrdp-sesman.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_RDP_PIDFILE}" >/dev/null 2>&1; then
   echo "Native RDP owns the interactive JRMC session. Disable native RDP before launching the shared UI." >&2
   exit 1
 fi
