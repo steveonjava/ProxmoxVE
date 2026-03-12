@@ -38,11 +38,11 @@ $STD apt install -y \
   openssl \
   python3 \
   ssl-cert \
+  tigervnc-scraping-server \
   tigervnc-standalone-server \
   websockify \
   wmctrl \
   x11-utils \
-  x11vnc \
   x11-xserver-utils \
   xauth \
   xdotool \
@@ -79,10 +79,7 @@ JRMC_VNC_HTPASSWD="${CONFIG_DIR}/native-vnc.htpasswd"
 JRMC_BOOTSTRAP_FILE="${CONFIG_DIR}/bootstrap-complete"
 JRMC_NATIVE_VNC_ENABLED="0"
 JRMC_VNC_PAM_SERVICE="jrmc-vnc"
-JRMC_NATIVE_VNC_SECURITY="VeNCrypt Plain"
-JRMC_NATIVE_VNC_CERT="${CONFIG_DIR}/native-vnc-cert.pem"
-JRMC_NATIVE_VNC_KEY="${CONFIG_DIR}/native-vnc-key.pem"
-JRMC_NATIVE_VNC_PEM="${CONFIG_DIR}/native-vnc-server.pem"
+JRMC_NATIVE_VNC_SECURITY="TLSPlain"
 EOF
 chmod 0644 /etc/default/jrmc
 msg_ok "Prepared Runtime Directories"
@@ -316,68 +313,6 @@ exec /usr/bin/websockify 127.0.0.1:${JRMC_WEBSOCKIFY_PORT} 127.0.0.1:${JRMC_VNC_
 EOF
 chmod +x /usr/local/bin/jrmc-websockify-start
 
-cat <<'EOF' >/usr/local/bin/jrmc-native-vnc-cert-ensure
-#!/usr/bin/env bash
-set -euo pipefail
-source /etc/default/jrmc
-
-install -d -m 755 "$(dirname "${JRMC_NATIVE_VNC_CERT}")"
-
-if [[ ! -s "${JRMC_NATIVE_VNC_CERT}" || ! -s "${JRMC_NATIVE_VNC_KEY}" ]]; then
-  host_name="$(hostname -f 2>/dev/null || hostname)"
-  host_ip="$(hostname -I | awk '{print $1}')"
-  tmp_cfg="$(mktemp)"
-
-  cat >"${tmp_cfg}" <<CFG
-[req]
-prompt = no
-distinguished_name = dn
-x509_extensions = v3_req
-
-[dn]
-CN = ${host_name}
-
-[v3_req]
-subjectAltName = DNS:${host_name}${host_ip:+,IP:${host_ip}}
-keyUsage = critical,digitalSignature,keyEncipherment
-extendedKeyUsage = serverAuth
-CFG
-
-  openssl req -x509 -nodes -newkey rsa:2048 -sha256 -days 825 \
-    -keyout "${JRMC_NATIVE_VNC_KEY}" \
-    -out "${JRMC_NATIVE_VNC_CERT}" \
-    -config "${tmp_cfg}" \
-    -extensions v3_req >/dev/null 2>&1
-
-  rm -f "${tmp_cfg}"
-fi
-
-cat "${JRMC_NATIVE_VNC_CERT}" "${JRMC_NATIVE_VNC_KEY}" >"${JRMC_NATIVE_VNC_PEM}"
-
-chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_NATIVE_VNC_CERT}" "${JRMC_NATIVE_VNC_KEY}"
-chmod 0644 "${JRMC_NATIVE_VNC_CERT}"
-chmod 0600 "${JRMC_NATIVE_VNC_KEY}"
-chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_NATIVE_VNC_PEM}"
-chmod 0600 "${JRMC_NATIVE_VNC_PEM}"
-EOF
-chmod +x /usr/local/bin/jrmc-native-vnc-cert-ensure
-
-cat <<'EOF' >/usr/local/bin/jrmc-native-vnc-auth
-#!/usr/bin/env bash
-set -euo pipefail
-source /etc/default/jrmc
-
-IFS= read -r username || exit 1
-IFS= read -r password || exit 1
-
-if [[ ! "${username}" =~ ^[A-Za-z0-9._-]{3,32}$ ]]; then
-  exit 1
-fi
-
-htpasswd -vb "${JRMC_VNC_HTPASSWD}" "${username}" "${password}" >/dev/null 2>&1
-EOF
-chmod +x /usr/local/bin/jrmc-native-vnc-auth
-
 cat <<'EOF' >/usr/local/bin/jrmc-native-vnc-start
 #!/usr/bin/env bash
 set -euo pipefail
@@ -393,23 +328,16 @@ for _i in $(seq 1 30); do
   sleep 0.5
 done
 
-/usr/local/bin/jrmc-native-vnc-cert-ensure
-
-exec /usr/bin/x11vnc \
+exec /usr/bin/x0vncserver \
   -display "${DISPLAY}" \
-  -auth "${XAUTHORITY}" \
   -rfbport "${JRMC_NATIVE_VNC_PORT}" \
-  -shared \
-  -forever \
-  -xrandr newfbsize \
+  -AlwaysShared=1 \
+  -NeverShared=0 \
+  -AcceptSetDesktopSize=1 \
   -desktop "JRiver Media Center" \
-  -ssl "${JRMC_NATIVE_VNC_PEM}" \
-  -vencrypt plain:support \
-  -anontls never \
-  -unixpw '*' \
-  -unixpw_cmd /usr/local/bin/jrmc-native-vnc-auth \
-  -noxdamage \
-  -o /tmp/jrmc-native-vnc.log
+  -SecurityTypes "${JRMC_NATIVE_VNC_SECURITY}" \
+  -PAMService "${JRMC_VNC_PAM_SERVICE}" \
+  -PlainUsers '*'
 EOF
 chmod +x /usr/local/bin/jrmc-native-vnc-start
 
@@ -449,7 +377,7 @@ Password: ${password}
 
 Default mode: Media Server
 Interactive UI: open Dashboard, then Launch JRMC UI.
-Native VNC: optional from Dashboard on port ${JRMC_NATIVE_VNC_PORT} while UI mode is active for Remmina/TigerVNC-style desktop clients.
+Native VNC: optional from Dashboard on port ${JRMC_NATIVE_VNC_PORT} while UI mode is active for Remmina/TigerVNC-style desktop clients with client-driven desktop resize.
 CREDS
 
 systemctl reload nginx
@@ -571,7 +499,7 @@ print_status() {
   if [[ "${state}" == "enabled" ]] && systemctl is-active --quiet jrmc-native-vnc.service; then
     echo "endpoint: $(hostname -I | awk '{print $1}'):${JRMC_NATIVE_VNC_PORT}"
     echo "security: ${JRMC_NATIVE_VNC_SECURITY} using the same username/password as Dashboard"
-    echo "backend: x11vnc compatibility service for Remmina and other desktop clients"
+    echo "backend: x0vncserver desktop-sharing backend with SetDesktopSize support"
   else
     echo "endpoint: unavailable until native VNC is enabled and UI mode is running"
   fi
@@ -581,12 +509,12 @@ case "${action}" in
   enable)
     update_default JRMC_NATIVE_VNC_ENABLED 1
     restart_ui_stack_if_needed
-    echo "Native VNC enabled. Port ${JRMC_NATIVE_VNC_PORT} will accept the same Dashboard username/password with ${JRMC_NATIVE_VNC_SECURITY} while UI mode is active. If the UI was already running, the native compatibility service was started immediately."
+    echo "Native VNC enabled. Port ${JRMC_NATIVE_VNC_PORT} will accept the same Dashboard username/password with ${JRMC_NATIVE_VNC_SECURITY} while UI mode is active. If the UI was already running, the native desktop-sharing service was started immediately."
     ;;
   disable)
     update_default JRMC_NATIVE_VNC_ENABLED 0
     restart_ui_stack_if_needed
-    echo "Native VNC disabled. Browser noVNC remains available through the Dashboard. If the UI was already running, the native compatibility service was stopped immediately."
+    echo "Native VNC disabled. Browser noVNC remains available through the Dashboard. If the UI was already running, the native desktop-sharing service was stopped immediately."
     ;;
   status)
     print_status
@@ -773,8 +701,8 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=disable-direct-vnc">Disable Native VNC</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=direct-vnc-status">Native VNC Status</a>
     </div>
-    <p>Secure native VNC listens on port <code>5902</code>, uses TLS-encrypted username/password authentication with the same Dashboard credentials, and is only reachable while JRMC UI mode is active. Browser noVNC keeps the dedicated resize-capable backend, while native desktop clients use a separate compatibility service tuned for broader viewer support.</p>
-    <p>Changing native VNC state while the UI is already running starts or stops the native compatibility service without interrupting the browser session.</p>
+    <p>Secure native VNC listens on port <code>5902</code>, uses TLS-encrypted username/password authentication with the same Dashboard credentials, and is only reachable while JRMC UI mode is active. Browser noVNC keeps the dedicated resize-capable backend, while native desktop clients use a separate TigerVNC desktop-sharing backend that accepts client desktop resize requests.</p>
+    <p>Changing native VNC state while the UI is already running starts or stops the native desktop-sharing service without interrupting the browser session.</p>
   </div>
   <div class="card">
     <h2>Activation</h2>
@@ -844,14 +772,6 @@ server {
         fastcgi_param SCRIPT_FILENAME /usr/lib/cgi-bin/jrmc-control.py;
         fastcgi_pass unix:/run/fcgiwrap.socket;
     }
-
-    location = /dashboard/native-vnc-cert.pem {
-        auth_basic "JRMC";
-        auth_basic_user_file /etc/nginx/jrmc.htpasswd;
-      alias /etc/jrmc/native-vnc-cert.pem;
-      default_type application/x-pem-file;
-      add_header Content-Disposition 'attachment; filename="jrmc-native-vnc-cert.pem"';
-    }
 }
 EOF
 ln -sf /etc/nginx/sites-available/jrmc.conf /etc/nginx/sites-enabled/jrmc.conf
@@ -898,7 +818,6 @@ Type=simple
 User=${APP_USER}
 ExecStart=/usr/local/bin/jrmc-native-vnc-start
 ExecStop=/bin/kill -TERM \$MAINPID
-SuccessExitStatus=2
 Restart=on-failure
 RestartSec=5
 
@@ -959,7 +878,6 @@ WantedBy=multi-user.target
 EOF
 
 rm -f /tmp/.X*-lock /tmp/.X11-unix/X*
-/usr/local/bin/jrmc-native-vnc-cert-ensure
 systemctl daemon-reload
 systemctl enable --now fcgiwrap.socket
 systemctl enable nginx jrmc-mediaserver.service

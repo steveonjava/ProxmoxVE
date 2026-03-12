@@ -45,7 +45,7 @@
       "type": "info"
     },
     {
-      "text": "Dashboard can optionally enable secure native VNC access on port 5902 while UI mode is active. Native VNC uses TLS-encrypted username/password authentication for Remmina, TigerVNC, and similar desktop clients, with the same username and password as the Dashboard, while browser noVNC keeps its separate resize-capable backend.",
+      "text": "Dashboard can optionally enable secure native VNC access on port 5902 while UI mode is active. Native VNC uses TLS-encrypted username/password authentication for Remmina, TigerVNC, and similar desktop clients, with the same username and password as the Dashboard and client-driven desktop resize support, while browser noVNC keeps its separate resize-capable backend.",
       "type": "info"
     },
     {
