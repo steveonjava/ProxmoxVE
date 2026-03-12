@@ -85,6 +85,7 @@ JRMC_NATIVE_RDP_ENABLED="0"
 JRMC_NATIVE_RDP_USER="${APP_USER}"
 JRMC_VNC_PAM_SERVICE="jrmc-vnc"
 JRMC_NATIVE_VNC_SECURITY="TLSPlain"
+JRMC_NATIVE_VNC_PIDFILE="${CONFIG_DIR}/native-vnc.pid"
 JRMC_NATIVE_VNC_CERT="${CONFIG_DIR}/native-vnc-cert.pem"
 JRMC_NATIVE_VNC_KEY="${CONFIG_DIR}/native-vnc-key.pem"
 JRMC_NATIVE_VNC_PEM="${CONFIG_DIR}/native-vnc-server.pem"
@@ -496,7 +497,7 @@ fi
 
 args=(
   -display "${DISPLAY}"
-  -fg
+  -pidfile "${JRMC_NATIVE_VNC_PIDFILE}"
   -rfbport "${JRMC_NATIVE_VNC_PORT}"
   -SecurityTypes "${JRMC_NATIVE_VNC_SECURITY}"
   -PAMService "${JRMC_VNC_PAM_SERVICE}"
@@ -515,6 +516,18 @@ fi
 exec /usr/bin/x0vncserver "${args[@]}"
 EOF
 chmod +x /usr/local/bin/jrmc-native-vnc-start
+
+cat <<'EOF' >/usr/local/bin/jrmc-native-vnc-stop
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/default/jrmc
+
+export DISPLAY=":${JRMC_DISPLAY}"
+
+/usr/bin/x0vncserver -kill -display "${DISPLAY}" -rfbport "${JRMC_NATIVE_VNC_PORT}" >/dev/null 2>&1 || true
+rm -f "${JRMC_NATIVE_VNC_PIDFILE}"
+EOF
+chmod +x /usr/local/bin/jrmc-native-vnc-stop
 
 cat <<'EOF' >/usr/local/bin/jrmc-set-web-credentials
 #!/usr/bin/env bash
@@ -1078,9 +1091,11 @@ After=jrmc-vnc.service jrmc-ui.service
 Requires=jrmc-vnc.service
 
 [Service]
-Type=simple
+Type=forking
+PIDFile=${CONFIG_DIR}/native-vnc.pid
+ExecStartPre=-/bin/rm -f ${CONFIG_DIR}/native-vnc.pid
 ExecStart=/usr/local/bin/jrmc-native-vnc-start
-ExecStop=/bin/kill -TERM \$MAINPID
+ExecStop=/usr/local/bin/jrmc-native-vnc-stop
 Restart=on-failure
 RestartSec=5
 
