@@ -11,6 +11,7 @@ APP_ACRONYM="JRMC"
 APP_USER="jriver"
 APP_HOME="/home/${APP_USER}"
 CONFIG_DIR="/etc/jrmc"
+RUNTIME_DIR="${APP_HOME}/.cache/jrmc"
 WEB_ROOT="/usr/share/jrmc-web"
 CGI_BIN="/usr/lib/cgi-bin"
 JRMC_DISPLAY=1
@@ -63,6 +64,7 @@ msg_info "Preparing Runtime Directories"
 install -d -m 700 -o "${APP_USER}" -g "${APP_USER}" \
   "${APP_HOME}/.vnc" \
   "${APP_HOME}/.config" \
+  "${RUNTIME_DIR}" \
   "${APP_HOME}/.config/tigervnc"
 install -d -m 755 "${CONFIG_DIR}" "${WEB_ROOT}" "${WEB_ROOT}/setup" "${WEB_ROOT}/dashboard" "${CGI_BIN}"
 make-ssl-cert generate-default-snakeoil --force-overwrite >/dev/null 2>&1 || true
@@ -86,9 +88,10 @@ JRMC_NATIVE_RDP_USER="${APP_USER}"
 JRMC_VNC_PAM_SERVICE="jrmc-vnc"
 JRMC_NATIVE_VNC_SECURITY="TLSPlain"
 JRMC_NATIVE_VNC_PIDFILE="${CONFIG_DIR}/native-vnc.pid"
-JRMC_UI_PIDFILE="${CONFIG_DIR}/ui.pid"
-JRMC_RDP_PIDFILE="${CONFIG_DIR}/rdp.pid"
-JRMC_RDP_OPENBOX_PIDFILE="${CONFIG_DIR}/rdp-openbox.pid"
+JRMC_RUNTIME_DIR="${RUNTIME_DIR}"
+JRMC_UI_PIDFILE="${RUNTIME_DIR}/ui.pid"
+JRMC_RDP_PIDFILE="${RUNTIME_DIR}/rdp.pid"
+JRMC_RDP_OPENBOX_PIDFILE="${RUNTIME_DIR}/rdp-openbox.pid"
 JRMC_NATIVE_VNC_CERT="${CONFIG_DIR}/native-vnc-cert.pem"
 JRMC_NATIVE_VNC_KEY="${CONFIG_DIR}/native-vnc-key.pem"
 JRMC_NATIVE_VNC_PEM="${CONFIG_DIR}/native-vnc-server.pem"
