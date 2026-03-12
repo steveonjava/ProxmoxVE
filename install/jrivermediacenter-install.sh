@@ -330,6 +330,7 @@ done
 
 exec /usr/bin/x0vncserver \
   -display "${DISPLAY}" \
+  -fg \
   -rfbport "${JRMC_NATIVE_VNC_PORT}" \
   -AlwaysShared=1 \
   -NeverShared=0 \
