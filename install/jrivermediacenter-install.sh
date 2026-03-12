@@ -41,7 +41,6 @@ $STD apt install -y \
   tigervnc-scraping-server \
   tigervnc-standalone-server \
   websockify \
-  wmctrl \
   x11-utils \
   x11-xserver-utils \
   xauth \
@@ -180,23 +179,71 @@ export USER="${JRMC_USER}"
 export DISPLAY=":${JRMC_DISPLAY}"
 export XAUTHORITY="${JRMC_HOME}/.Xauthority"
 
+list_client_windows() {
+  xprop -root _NET_CLIENT_LIST 2>/dev/null | awk -F '# ' '
+    NF > 1 {
+      gsub(/,/, "", $2)
+      n = split($2, ids, /[[:space:]]+/)
+      for (i = 1; i <= n; i++) {
+        if (ids[i] != "") {
+          print ids[i]
+        }
+      }
+    }
+  '
+}
+
+window_properties() {
+  local wid="$1"
+  xprop -id "${wid}" WM_CLASS _NET_WM_NAME WM_NAME _NET_WM_PID _NET_WM_STATE 2>/dev/null || true
+}
+
+is_jriver_window() {
+  local props="$1"
+  [[ "${props}" == *'MJFrame'* ]] || [[ "${props}" == *'Media_Center_35'* ]] || [[ "${props}" == *'JRiver Media Center'* ]]
+}
+
+is_pid_match() {
+  local props="$1"
+  [[ -n "${app_pid}" && "${props}" == *"_NET_WM_PID(CARDINAL) = ${app_pid}"* ]]
+}
+
 find_window_id() {
-  local wid name
+  local wid props fallback=""
 
   while read -r wid; do
-    name="$(xdotool getwindowname "${wid}" 2>/dev/null || true)"
-    if [[ "${name}" == "JRiver Media Center 35" ]]; then
+    [[ -n "${wid}" ]] || continue
+    props="$(window_properties "${wid}")"
+    [[ -n "${props}" ]] || continue
+    is_jriver_window "${props}" || continue
+    if is_pid_match "${props}"; then
       echo "${wid}"
       return 0
     fi
+    [[ -n "${fallback}" ]] || fallback="${wid}"
+  done < <(list_client_windows)
+
+  if [[ -n "${fallback}" ]]; then
+    echo "${fallback}"
+    return 0
+  fi
+
+  while read -r wid; do
+    [[ -n "${wid}" ]] || continue
+    props="$(window_properties "${wid}")"
+    [[ -n "${props}" ]] || continue
+    is_jriver_window "${props}" || continue
+    echo "${wid}"
+    return 0
   done < <(xdotool search --onlyvisible --pid "${app_pid}" 2>/dev/null || true)
 
   while read -r wid; do
-    name="$(xdotool getwindowname "${wid}" 2>/dev/null || true)"
-    if [[ "${name}" == "JRiver Media Center 35" ]]; then
-      echo "${wid}"
-      return 0
-    fi
+    [[ -n "${wid}" ]] || continue
+    props="$(window_properties "${wid}")"
+    [[ -n "${props}" ]] || continue
+    is_jriver_window "${props}" || continue
+    echo "${wid}"
+    return 0
   done < <(xdotool search --onlyvisible --class 'Media_Center_35' 2>/dev/null || true)
 
   return 1
@@ -219,9 +266,17 @@ fit_window() {
   local width="$2"
   local height="$3"
 
+  xdotool windowactivate --sync "${wid}" >/dev/null 2>&1 || true
+  xdotool windowraise "${wid}" >/dev/null 2>&1 || true
+  xdotool windowstate --remove MAXIMIZED_VERT "${wid}" >/dev/null 2>&1 || true
+  xdotool windowstate --remove MAXIMIZED_HORZ "${wid}" >/dev/null 2>&1 || true
+  sleep 0.2
   xdotool windowmove "${wid}" 0 0 >/dev/null 2>&1 || true
   xdotool windowsize "${wid}" "${width}" "${height}" >/dev/null 2>&1 || true
   xdotool windowmove "${wid}" 0 0 >/dev/null 2>&1 || true
+  sleep 0.2
+  xdotool windowstate --add MAXIMIZED_VERT "${wid}" >/dev/null 2>&1 || true
+  xdotool windowstate --add MAXIMIZED_HORZ "${wid}" >/dev/null 2>&1 || true
 }
 
 window_id=""
