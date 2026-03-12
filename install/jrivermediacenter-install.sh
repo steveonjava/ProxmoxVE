@@ -898,6 +898,7 @@ Type=simple
 User=${APP_USER}
 ExecStart=/usr/local/bin/jrmc-native-vnc-start
 ExecStop=/bin/kill -TERM \$MAINPID
+SuccessExitStatus=2
 Restart=on-failure
 RestartSec=5
 
