@@ -45,7 +45,11 @@
       "type": "info"
     },
     {
-      "text": "Dashboard can optionally enable secure native VNC access on port 5902 while UI mode is active. Native VNC uses VeNCrypt username/password authentication for Remmina, TigerVNC, and similar desktop clients, with the same username and password as the Dashboard and an x11vnc shared-display backend for broader native-client compatibility, while browser noVNC keeps its separate Xtigervnc backend.",
+      "text": "Dashboard can optionally enable native RDP access on port 3389 for Remmina and similar RDP clients. Sign in as jriver with the same password used for the Dashboard.",
+      "type": "info"
+    },
+    {
+      "text": "Dashboard can optionally enable native VNC access on port 5902 while UI mode is active. Native VNC uses TLSPlain with the same Dashboard username and password for TigerVNC-compatible clients, while browser noVNC keeps its separate Xtigervnc backend and native desktop sharing uses x0vncserver.",
       "type": "info"
     },
     {
