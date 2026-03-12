@@ -496,6 +496,7 @@ fi
 
 args=(
   -display "${DISPLAY}"
+  -fg
   -rfbport "${JRMC_NATIVE_VNC_PORT}"
   -SecurityTypes "${JRMC_NATIVE_VNC_SECURITY}"
   -PAMService "${JRMC_VNC_PAM_SERVICE}"
