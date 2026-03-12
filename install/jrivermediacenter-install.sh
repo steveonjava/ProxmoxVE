@@ -42,6 +42,7 @@ $STD apt install -y \
   websockify \
   wmctrl \
   x11-utils \
+  x11vnc \
   x11-xserver-utils \
   xauth \
   xdotool \
@@ -78,9 +79,10 @@ JRMC_VNC_HTPASSWD="${CONFIG_DIR}/native-vnc.htpasswd"
 JRMC_BOOTSTRAP_FILE="${CONFIG_DIR}/bootstrap-complete"
 JRMC_NATIVE_VNC_ENABLED="0"
 JRMC_VNC_PAM_SERVICE="jrmc-vnc"
-JRMC_NATIVE_VNC_SECURITY="TLSPlain"
+JRMC_NATIVE_VNC_SECURITY="VeNCrypt Plain"
 JRMC_NATIVE_VNC_CERT="${CONFIG_DIR}/native-vnc-cert.pem"
 JRMC_NATIVE_VNC_KEY="${CONFIG_DIR}/native-vnc-key.pem"
+JRMC_NATIVE_VNC_PEM="${CONFIG_DIR}/native-vnc-server.pem"
 EOF
 chmod 0644 /etc/default/jrmc
 msg_ok "Prepared Runtime Directories"
@@ -126,17 +128,14 @@ mkdir -p /tmp/.X11-unix
 touch "${HOME}/.Xauthority"
 xauth -f "${HOME}/.Xauthority" add "${HOSTNAME}/unix:${JRMC_DISPLAY}" . "$(mcookie)" >/dev/null 2>&1 || true
 
-rfb_port="${JRMC_VNC_PORT}"
-security_types="None"
-listen_local=1
 args=(
   "${DISPLAY}"
   -geometry "${JRMC_WIDTH}x${JRMC_HEIGHT}"
   -depth 24
-  -rfbport "${rfb_port}"
+  -rfbport "${JRMC_VNC_PORT}"
   -AlwaysShared
   -NeverShared=0
-  -SecurityTypes "${security_types}"
+  -SecurityTypes None
   -desktop "JRiver Media Center"
   -auth "${HOME}/.Xauthority"
   -IdleTimeout 0
@@ -144,35 +143,8 @@ args=(
   -MaxDisconnectionTime 0
   -MaxIdleTime 0
   -AcceptSetDesktopSize=1
+  -localhost 1
 )
-
-if [[ "${JRMC_NATIVE_VNC_ENABLED:-0}" == "1" ]]; then
-  rfb_port="${JRMC_NATIVE_VNC_PORT}"
-  security_types="${JRMC_NATIVE_VNC_SECURITY}"
-  listen_local=0
-  args=(
-    "${DISPLAY}"
-    -geometry "${JRMC_WIDTH}x${JRMC_HEIGHT}"
-    -depth 24
-    -rfbport "${rfb_port}"
-    -AlwaysShared
-    -NeverShared=0
-    -SecurityTypes "${security_types}"
-    -desktop "JRiver Media Center"
-    -auth "${HOME}/.Xauthority"
-    -IdleTimeout 0
-    -MaxConnectionTime 0
-    -MaxDisconnectionTime 0
-    -MaxIdleTime 0
-    -AcceptSetDesktopSize=1
-    -PAMService "${JRMC_VNC_PAM_SERVICE}"
-    -PlainUsers '*'
-  )
-fi
-
-if (( listen_local )); then
-  args+=( -localhost 1 )
-fi
 
 exec /usr/bin/Xtigervnc "${args[@]}"
 EOF
@@ -340,12 +312,7 @@ cat <<'EOF' >/usr/local/bin/jrmc-websockify-start
 set -euo pipefail
 source /etc/default/jrmc
 
-target_port="${JRMC_VNC_PORT}"
-if [[ "${JRMC_NATIVE_VNC_ENABLED:-0}" == "1" ]]; then
-  target_port="${JRMC_NATIVE_VNC_PORT}"
-fi
-
-exec /usr/bin/websockify 127.0.0.1:${JRMC_WEBSOCKIFY_PORT} 127.0.0.1:${target_port}
+exec /usr/bin/websockify 127.0.0.1:${JRMC_WEBSOCKIFY_PORT} 127.0.0.1:${JRMC_VNC_PORT}
 EOF
 chmod +x /usr/local/bin/jrmc-websockify-start
 
@@ -354,17 +321,14 @@ cat <<'EOF' >/usr/local/bin/jrmc-native-vnc-cert-ensure
 set -euo pipefail
 source /etc/default/jrmc
 
-if [[ -s "${JRMC_NATIVE_VNC_CERT}" && -s "${JRMC_NATIVE_VNC_KEY}" ]]; then
-  exit 0
-fi
-
 install -d -m 755 "$(dirname "${JRMC_NATIVE_VNC_CERT}")"
 
-host_name="$(hostname -f 2>/dev/null || hostname)"
-host_ip="$(hostname -I | awk '{print $1}')"
-tmp_cfg="$(mktemp)"
+if [[ ! -s "${JRMC_NATIVE_VNC_CERT}" || ! -s "${JRMC_NATIVE_VNC_KEY}" ]]; then
+  host_name="$(hostname -f 2>/dev/null || hostname)"
+  host_ip="$(hostname -I | awk '{print $1}')"
+  tmp_cfg="$(mktemp)"
 
-cat >"${tmp_cfg}" <<CFG
+  cat >"${tmp_cfg}" <<CFG
 [req]
 prompt = no
 distinguished_name = dn
@@ -379,18 +343,75 @@ keyUsage = critical,digitalSignature,keyEncipherment
 extendedKeyUsage = serverAuth
 CFG
 
-openssl req -x509 -nodes -newkey rsa:2048 -sha256 -days 825 \
-  -keyout "${JRMC_NATIVE_VNC_KEY}" \
-  -out "${JRMC_NATIVE_VNC_CERT}" \
-  -config "${tmp_cfg}" \
-  -extensions v3_req >/dev/null 2>&1
+  openssl req -x509 -nodes -newkey rsa:2048 -sha256 -days 825 \
+    -keyout "${JRMC_NATIVE_VNC_KEY}" \
+    -out "${JRMC_NATIVE_VNC_CERT}" \
+    -config "${tmp_cfg}" \
+    -extensions v3_req >/dev/null 2>&1
+
+  rm -f "${tmp_cfg}"
+fi
+
+cat "${JRMC_NATIVE_VNC_CERT}" "${JRMC_NATIVE_VNC_KEY}" >"${JRMC_NATIVE_VNC_PEM}"
 
 chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_NATIVE_VNC_CERT}" "${JRMC_NATIVE_VNC_KEY}"
 chmod 0644 "${JRMC_NATIVE_VNC_CERT}"
 chmod 0600 "${JRMC_NATIVE_VNC_KEY}"
-rm -f "${tmp_cfg}"
+chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_NATIVE_VNC_PEM}"
+chmod 0600 "${JRMC_NATIVE_VNC_PEM}"
 EOF
 chmod +x /usr/local/bin/jrmc-native-vnc-cert-ensure
+
+cat <<'EOF' >/usr/local/bin/jrmc-native-vnc-auth
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/default/jrmc
+
+IFS= read -r username || exit 1
+IFS= read -r password || exit 1
+
+if [[ ! "${username}" =~ ^[A-Za-z0-9._-]{3,32}$ ]]; then
+  exit 1
+fi
+
+htpasswd -vb "${JRMC_VNC_HTPASSWD}" "${username}" "${password}" >/dev/null 2>&1
+EOF
+chmod +x /usr/local/bin/jrmc-native-vnc-auth
+
+cat <<'EOF' >/usr/local/bin/jrmc-native-vnc-start
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/default/jrmc
+
+export HOME="${JRMC_HOME}"
+export USER="${JRMC_USER}"
+export DISPLAY=":${JRMC_DISPLAY}"
+export XAUTHORITY="${JRMC_HOME}/.Xauthority"
+
+for _i in $(seq 1 30); do
+  xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1 && break
+  sleep 0.5
+done
+
+/usr/local/bin/jrmc-native-vnc-cert-ensure
+
+exec /usr/bin/x11vnc \
+  -display "${DISPLAY}" \
+  -auth "${XAUTHORITY}" \
+  -rfbport "${JRMC_NATIVE_VNC_PORT}" \
+  -shared \
+  -forever \
+  -xrandr newfbsize \
+  -desktop "JRiver Media Center" \
+  -ssl "${JRMC_NATIVE_VNC_PEM}" \
+  -vencrypt plain:support \
+  -anontls never \
+  -unixpw '*' \
+  -unixpw_cmd /usr/local/bin/jrmc-native-vnc-auth \
+  -noxdamage \
+  -o /tmp/jrmc-native-vnc.log
+EOF
+chmod +x /usr/local/bin/jrmc-native-vnc-start
 
 cat <<'EOF' >/usr/local/bin/jrmc-set-web-credentials
 #!/usr/bin/env bash
@@ -428,7 +449,7 @@ Password: ${password}
 
 Default mode: Media Server
 Interactive UI: open Dashboard, then Launch JRMC UI.
-Native VNC: optional from Dashboard on port ${JRMC_NATIVE_VNC_PORT} while UI mode is active.
+Native VNC: optional from Dashboard on port ${JRMC_NATIVE_VNC_PORT} while UI mode is active for Remmina/TigerVNC-style desktop clients.
 CREDS
 
 systemctl reload nginx
@@ -449,16 +470,21 @@ case "${mode}" in
     systemctl restart jrmc-vnc.service
     systemctl restart jrmc-websockify.service
     systemctl restart jrmc-ui.service
+    if [[ "${JRMC_NATIVE_VNC_ENABLED:-0}" == "1" ]]; then
+      systemctl restart jrmc-native-vnc.service
+    else
+      systemctl stop jrmc-native-vnc.service || true
+    fi
     echo "JRMC UI mode started."
     ;;
   mediaserver)
-    systemctl stop jrmc-ui.service jrmc-websockify.service || true
+    systemctl stop jrmc-native-vnc.service jrmc-ui.service jrmc-websockify.service || true
     systemctl restart jrmc-vnc.service
     systemctl restart jrmc-mediaserver.service
     echo "JRMC Media Server mode started."
     ;;
   stop-ui)
-    systemctl stop jrmc-ui.service jrmc-websockify.service jrmc-vnc.service || true
+    systemctl stop jrmc-native-vnc.service jrmc-ui.service jrmc-websockify.service jrmc-vnc.service || true
     echo "JRMC UI mode stopped."
     ;;
   stop-server)
@@ -471,7 +497,7 @@ case "${mode}" in
     echo "jrmc-vnc: $(systemctl is-active jrmc-vnc.service 2>/dev/null || true)"
     echo "jrmc-websockify: $(systemctl is-active jrmc-websockify.service 2>/dev/null || true)"
     echo "jrmc-ui: $(systemctl is-active jrmc-ui.service 2>/dev/null || true)"
-    echo "jrmc-native-vnc: $([[ "${JRMC_NATIVE_VNC_ENABLED:-0}" == "1" && "$(systemctl is-active jrmc-ui.service 2>/dev/null || true)" == "active" && "$(systemctl is-active jrmc-vnc.service 2>/dev/null || true)" == "active" ]] && echo active || echo inactive)"
+    echo "jrmc-native-vnc: $(systemctl is-active jrmc-native-vnc.service 2>/dev/null || true)"
     echo "native-vnc: $([[ "${JRMC_NATIVE_VNC_ENABLED:-0}" == "1" ]] && echo enabled || echo disabled)"
     ;;
   *)
@@ -524,10 +550,11 @@ restart_ui_stack_if_needed() {
   fi
 
   if (( ui_active )); then
-    systemctl stop jrmc-ui.service jrmc-websockify.service || true
-    systemctl restart jrmc-vnc.service
-    systemctl restart jrmc-websockify.service
-    systemctl restart jrmc-ui.service
+    if [[ "${JRMC_NATIVE_VNC_ENABLED:-0}" == "1" ]]; then
+      systemctl restart jrmc-native-vnc.service
+    else
+      systemctl stop jrmc-native-vnc.service || true
+    fi
   fi
 }
 
@@ -540,11 +567,11 @@ print_status() {
 
   echo "native-vnc: ${state}"
   echo "ui-mode: $(systemctl is-active jrmc-ui.service 2>/dev/null || true)"
-  echo "native-vnc-service: $([[ "${state}" == "enabled" && "$(systemctl is-active jrmc-ui.service 2>/dev/null || true)" == "active" && "$(systemctl is-active jrmc-vnc.service 2>/dev/null || true)" == "active" ]] && echo active || echo inactive)"
-  if [[ "${state}" == "enabled" ]] && systemctl is-active --quiet jrmc-ui.service; then
+  echo "native-vnc-service: $(systemctl is-active jrmc-native-vnc.service 2>/dev/null || true)"
+  if [[ "${state}" == "enabled" ]] && systemctl is-active --quiet jrmc-native-vnc.service; then
     echo "endpoint: $(hostname -I | awk '{print $1}'):${JRMC_NATIVE_VNC_PORT}"
     echo "security: ${JRMC_NATIVE_VNC_SECURITY} using the same username/password as Dashboard"
-    echo "desktop-resize: supported through TigerVNC SetDesktopSize"
+    echo "backend: x11vnc compatibility service for Remmina and other desktop clients"
   else
     echo "endpoint: unavailable until native VNC is enabled and UI mode is running"
   fi
@@ -554,12 +581,12 @@ case "${action}" in
   enable)
     update_default JRMC_NATIVE_VNC_ENABLED 1
     restart_ui_stack_if_needed
-    echo "Native VNC enabled. Port ${JRMC_NATIVE_VNC_PORT} will accept the same Dashboard username/password with ${JRMC_NATIVE_VNC_SECURITY} while UI mode is active. If the UI was already running, it was restarted so the resize-capable VNC backend could be reconfigured."
+    echo "Native VNC enabled. Port ${JRMC_NATIVE_VNC_PORT} will accept the same Dashboard username/password with ${JRMC_NATIVE_VNC_SECURITY} while UI mode is active. If the UI was already running, the native compatibility service was started immediately."
     ;;
   disable)
     update_default JRMC_NATIVE_VNC_ENABLED 0
     restart_ui_stack_if_needed
-    echo "Native VNC disabled. Browser noVNC remains available through the Dashboard. If the UI was already running, it was restarted to return the VNC backend to browser-only mode."
+    echo "Native VNC disabled. Browser noVNC remains available through the Dashboard. If the UI was already running, the native compatibility service was stopped immediately."
     ;;
   status)
     print_status
@@ -739,15 +766,15 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
   </div>
   <div class="card">
     <h2>Interactive Session</h2>
-    <p>After launching the UI, open noVNC in the browser or optionally enable secure native VNC for compatible TigerVNC desktop clients.</p>
+    <p>After launching the UI, open noVNC in the browser or optionally enable secure native VNC for Remmina, TigerVNC, and similar desktop clients.</p>
     <div class="actions">
       <a href="/novnc/vnc.html?autoconnect=1&resize=remote&path=/websockify">Open noVNC</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=enable-direct-vnc">Enable Native VNC</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=disable-direct-vnc">Disable Native VNC</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=direct-vnc-status">Native VNC Status</a>
     </div>
-    <p>Secure native VNC listens on port <code>5902</code>, uses TLS-encrypted username/password authentication with the same Dashboard credentials, and is only reachable while JRMC UI mode is active. Client-driven desktop resize is supported, so resizing the VNC client window resizes the remote JRMC desktop as well.</p>
-    <p>Changing native VNC state while the UI is already running restarts the current JRMC UI session so the resize-capable VNC backend can be reconfigured.</p>
+    <p>Secure native VNC listens on port <code>5902</code>, uses TLS-encrypted username/password authentication with the same Dashboard credentials, and is only reachable while JRMC UI mode is active. Browser noVNC keeps the dedicated resize-capable backend, while native desktop clients use a separate compatibility service tuned for broader viewer support.</p>
+    <p>Changing native VNC state while the UI is already running starts or stops the native compatibility service without interrupting the browser session.</p>
   </div>
   <div class="card">
     <h2>Activation</h2>
@@ -860,6 +887,24 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+cat <<EOF >/etc/systemd/system/jrmc-native-vnc.service
+[Unit]
+Description=JRiver Media Center native VNC compatibility backend
+After=jrmc-vnc.service jrmc-ui.service
+Requires=jrmc-vnc.service
+
+[Service]
+Type=simple
+User=${APP_USER}
+ExecStart=/usr/local/bin/jrmc-native-vnc-start
+ExecStop=/bin/kill -TERM \$MAINPID
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 cat <<'EOF' >/etc/systemd/system/jrmc-websockify.service
 [Unit]
 Description=JRiver Media Center noVNC websocket proxy
@@ -932,7 +977,7 @@ echo
 echo "Web setup URL:        https://<container-ip>:5800/setup/"
 echo "Default mode:         Media Server"
 echo "Interactive UI:       noVNC via Dashboard with remote desktop resize"
-echo "Native VNC:           Optional on port 5902 with TigerVNC resize support while UI mode is active"
+echo "Native VNC:           Optional on port 5902 with Remmina-friendly desktop client compatibility while UI mode is active"
 echo
 
 PS3="Select an option: "
