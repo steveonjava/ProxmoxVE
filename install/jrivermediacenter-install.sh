@@ -265,18 +265,22 @@ fit_window() {
   local wid="$1"
   local width="$2"
   local height="$3"
+  local _attempt
 
-  xdotool windowactivate --sync "${wid}" >/dev/null 2>&1 || true
-  xdotool windowraise "${wid}" >/dev/null 2>&1 || true
-  xdotool windowstate --remove MAXIMIZED_VERT "${wid}" >/dev/null 2>&1 || true
-  xdotool windowstate --remove MAXIMIZED_HORZ "${wid}" >/dev/null 2>&1 || true
-  sleep 0.2
-  xdotool windowmove "${wid}" 0 0 >/dev/null 2>&1 || true
-  xdotool windowsize "${wid}" "${width}" "${height}" >/dev/null 2>&1 || true
-  xdotool windowmove "${wid}" 0 0 >/dev/null 2>&1 || true
-  sleep 0.2
-  xdotool windowstate --add MAXIMIZED_VERT "${wid}" >/dev/null 2>&1 || true
-  xdotool windowstate --add MAXIMIZED_HORZ "${wid}" >/dev/null 2>&1 || true
+  for _attempt in 1 2; do
+    xdotool windowactivate "${wid}" >/dev/null 2>&1 || true
+    xdotool windowraise "${wid}" >/dev/null 2>&1 || true
+    xdotool windowstate --remove MAXIMIZED_VERT "${wid}" >/dev/null 2>&1 || true
+    xdotool windowstate --remove MAXIMIZED_HORZ "${wid}" >/dev/null 2>&1 || true
+    sleep 0.2
+    xdotool windowmove "${wid}" 0 0 >/dev/null 2>&1 || true
+    xdotool windowsize "${wid}" "${width}" "${height}" >/dev/null 2>&1 || true
+    xdotool windowmove "${wid}" 0 0 >/dev/null 2>&1 || true
+    sleep 0.2
+    xdotool windowstate --add MAXIMIZED_VERT "${wid}" >/dev/null 2>&1 || true
+    xdotool windowstate --add MAXIMIZED_HORZ "${wid}" >/dev/null 2>&1 || true
+    sleep 0.2
+  done
 }
 
 window_id=""
@@ -301,6 +305,11 @@ while kill -0 "${app_pid}" >/dev/null 2>&1; do
   fi
 
   if [[ "${current_size}" != "${last_size}" ]]; then
+    current_window_id="$(find_window_id || true)"
+    if [[ -n "${current_window_id:-}" ]]; then
+      window_id="${current_window_id}"
+    fi
+
     read -r width height <<<"${current_size}"
     fit_window "${window_id}" "${width}" "${height}"
     last_size="${current_size}"
