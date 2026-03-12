@@ -45,11 +45,11 @@
       "type": "info"
     },
     {
-      "text": "Dashboard can optionally enable native RDP access on port 3389 for Remmina and similar RDP clients. Sign in with the same Dashboard username and password.",
+      "text": "Dashboard can optionally enable native RDP access on port 3389 for Remmina and similar RDP clients. Sign in with the same Dashboard username and password. Enabling RDP stops Media Server and the shared noVNC/native VNC UI session so JRiver keeps one writable library owner.",
       "type": "info"
     },
     {
-      "text": "Dashboard can optionally enable native VNC access on port 5902 while UI mode is active. Native VNC uses TLSPlain with the same Dashboard username and password for TigerVNC-compatible clients, while browser noVNC keeps its separate Xtigervnc backend and native desktop sharing uses x0vncserver.",
+      "text": "Dashboard can optionally enable native VNC access on port 5902 while UI mode is active. Native VNC uses TLSPlain with the same Dashboard username and password for TigerVNC-compatible clients, while browser noVNC keeps its separate Xtigervnc backend and native desktop sharing uses x0vncserver. Browser noVNC and native VNC share one session, and that shared UI path is mutually exclusive with native RDP.",
       "type": "info"
     },
     {
