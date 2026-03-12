@@ -79,6 +79,7 @@ JRMC_WEBSOCKIFY_PORT="${JRMC_WEBSOCKIFY_PORT}"
 JRMC_WEB_PORT="${JRMC_WEB_PORT}"
 JRMC_WIDTH="1440"
 JRMC_HEIGHT="900"
+JRMC_UI_SCALE="100"
 JRMC_WEB_HTPASSWD="/etc/nginx/jrmc.htpasswd"
 JRMC_VNC_HTPASSWD="${CONFIG_DIR}/native-vnc.htpasswd"
 JRMC_BOOTSTRAP_FILE="${CONFIG_DIR}/bootstrap-complete"
@@ -137,13 +138,18 @@ export HOME="${JRMC_HOME}"
 export USER="${JRMC_USER}"
 export DISPLAY=":${JRMC_DISPLAY}"
 
+if ! read -r jrmc_scale_width jrmc_scale_height < <(/usr/local/bin/jrmc-scale-profile size 2>/dev/null); then
+  jrmc_scale_width="${JRMC_WIDTH}"
+  jrmc_scale_height="${JRMC_HEIGHT}"
+fi
+
 mkdir -p /tmp/.X11-unix
 touch "${HOME}/.Xauthority"
 xauth -f "${HOME}/.Xauthority" add "${HOSTNAME}/unix:${JRMC_DISPLAY}" . "$(mcookie)" >/dev/null 2>&1 || true
 
 args=(
   "${DISPLAY}"
-  -geometry "${JRMC_WIDTH}x${JRMC_HEIGHT}"
+  -geometry "${jrmc_scale_width}x${jrmc_scale_height}"
   -depth 24
   -rfbport "${JRMC_VNC_PORT}"
   -AlwaysShared
@@ -180,6 +186,258 @@ fi
 nohup /usr/bin/openbox >/tmp/jrmc-openbox.log 2>&1 &
 EOF
 chmod +x /usr/local/bin/jrmc-openbox-start
+
+cat <<'EOF' >/usr/local/bin/jrmc-scale-profile
+#!/usr/bin/env python3
+import math
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+ALLOWED_SCALES = (100, 125, 150, 175, 200)
+
+
+def load_defaults() -> dict[str, str]:
+    values: dict[str, str] = {}
+    for raw in Path("/etc/default/jrmc").read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key] = value.strip().strip('"').strip("'")
+    return values
+
+
+def int_value(values: dict[str, str], key: str, default: int) -> int:
+    try:
+        return int(str(values.get(key, default)).strip())
+    except (TypeError, ValueError):
+        return default
+
+
+def build_profile(values: dict[str, str]) -> dict[str, float | int | str]:
+    scale = int_value(values, "JRMC_UI_SCALE", 100)
+    if scale not in ALLOWED_SCALES:
+        scale = 100
+
+    base_width = max(800, int_value(values, "JRMC_WIDTH", 1440))
+    base_height = max(600, int_value(values, "JRMC_HEIGHT", 900))
+    width = max(640, math.floor((base_width * 100 / scale) + 0.5))
+    height = max(480, math.floor((base_height * 100 / scale) + 0.5))
+    dpi = max(96, math.floor((96 * scale / 100) + 0.5))
+    gdk_scale = 2 if scale >= 175 else 1
+    gdk_dpi_scale = (scale / 100) / gdk_scale
+    qt_scale_factor = scale / 100
+    cursor_size = max(24, math.floor((24 * scale / 100) + 0.5))
+    fbmm_width = max(120, math.floor((width * 25.4 / dpi) + 0.5))
+    fbmm_height = max(90, math.floor((height * 25.4 / dpi) + 0.5))
+    display = values.get("JRMC_DISPLAY", "1")
+    return {
+        "scale": scale,
+        "base_width": base_width,
+        "base_height": base_height,
+        "width": width,
+        "height": height,
+        "dpi": dpi,
+        "gdk_scale": gdk_scale,
+        "gdk_dpi_scale": gdk_dpi_scale,
+        "qt_scale_factor": qt_scale_factor,
+        "cursor_size": cursor_size,
+        "fbmm_width": fbmm_width,
+        "fbmm_height": fbmm_height,
+        "shared_display": f":{display}",
+        "home": values.get("JRMC_HOME", "/home/jriver"),
+    }
+
+
+def format_float(value: float) -> str:
+    return f"{value:.3f}".rstrip("0").rstrip(".")
+
+
+def emit_exports(profile: dict[str, float | int | str]) -> None:
+    print(f'export JRMC_UI_SCALE_ACTIVE="{profile["scale"]}"')
+    print(f'export JRMC_SCALE_WIDTH="{profile["width"]}"')
+    print(f'export JRMC_SCALE_HEIGHT="{profile["height"]}"')
+    print(f'export JRMC_SCALE_DPI="{profile["dpi"]}"')
+    print(f'export JRMC_SCALE_FBMM_WIDTH="{profile["fbmm_width"]}"')
+    print(f'export JRMC_SCALE_FBMM_HEIGHT="{profile["fbmm_height"]}"')
+    print(f'export GDK_SCALE="{profile["gdk_scale"]}"')
+    print(f'export GDK_DPI_SCALE="{format_float(float(profile["gdk_dpi_scale"]))}"')
+    print(f'export QT_SCALE_FACTOR="{format_float(float(profile["qt_scale_factor"]))}"')
+    print('export QT_AUTO_SCREEN_SCALE_FACTOR="0"')
+    print('export QT_ENABLE_HIGHDPI_SCALING="1"')
+    print('export QT_SCALE_FACTOR_ROUNDING_POLICY="RoundPreferFloor"')
+    print(f'export XCURSOR_SIZE="{profile["cursor_size"]}"')
+
+
+def apply_session(values: dict[str, str], profile: dict[str, float | int | str]) -> int:
+    env = os.environ.copy()
+    display = env.get("DISPLAY") or str(profile["shared_display"])
+    env["DISPLAY"] = display
+    env["XAUTHORITY"] = env.get("XAUTHORITY") or f'{profile["home"]}/.Xauthority'
+
+    resources = (
+        f'Xft.dpi: {profile["dpi"]}\n'
+        f'Xcursor.size: {profile["cursor_size"]}\n'
+    )
+    subprocess.run(["xrdb", "-quiet", "-merge", "-"], input=resources, text=True, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    subprocess.run(["xrandr", "--dpi", str(profile["dpi"])], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    subprocess.run(["xrandr", "--fbmm", f'{profile["fbmm_width"]}x{profile["fbmm_height"]}'], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
+    if display == str(profile["shared_display"]):
+        geometry = f'{profile["width"]}x{profile["height"]}'
+        subprocess.run(["xrandr", "--size", geometry], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        subprocess.run(["xrandr", "--fb", geometry], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
+    return 0
+
+
+def print_summary(profile: dict[str, float | int | str]) -> None:
+    print(f'ui-scale: {profile["scale"]}%')
+    print(f'shared-ui-geometry: {profile["width"]}x{profile["height"]} (base {profile["base_width"]}x{profile["base_height"]})')
+    print(f'session-dpi: {profile["dpi"]}')
+    print(f'gtk-hints: GDK_SCALE={profile["gdk_scale"]} GDK_DPI_SCALE={format_float(float(profile["gdk_dpi_scale"]))}')
+    print(f'qt-hints: QT_SCALE_FACTOR={format_float(float(profile["qt_scale_factor"]))}')
+    print('client-guidance: Prefer 100% / 1:1 scaling in noVNC, TigerVNC, and Remmina for the sharpest result.')
+
+
+def main() -> int:
+    action = sys.argv[1] if len(sys.argv) > 1 else "summary"
+    values = load_defaults()
+    profile = build_profile(values)
+
+    if action == "exports":
+        emit_exports(profile)
+        return 0
+    if action == "size":
+        print(f'{profile["width"]} {profile["height"]}')
+        return 0
+    if action == "geometry":
+        print(f'{profile["width"]}x{profile["height"]}')
+        return 0
+    if action == "summary":
+        print_summary(profile)
+        return 0
+    if action == "apply-session":
+        return apply_session(values, profile)
+
+    print("Usage: jrmc-scale-profile {exports|size|geometry|summary|apply-session}", file=sys.stderr)
+    return 1
+
+
+raise SystemExit(main())
+EOF
+chmod +x /usr/local/bin/jrmc-scale-profile
+
+cat <<'EOF' >/usr/local/bin/jrmc-scale-watch
+#!/usr/bin/env bash
+set -euo pipefail
+
+last_signature=""
+while true; do
+  signature="$(grep -E '^(JRMC_UI_SCALE|JRMC_WIDTH|JRMC_HEIGHT)=' /etc/default/jrmc 2>/dev/null | tr '\n' '|')"
+  if [[ "${signature}" != "${last_signature}" ]]; then
+    /usr/local/bin/jrmc-scale-profile apply-session >/dev/null 2>&1 || true
+    last_signature="${signature}"
+  fi
+  sleep 2
+done
+EOF
+chmod +x /usr/local/bin/jrmc-scale-watch
+
+cat <<'EOF' >/usr/local/bin/jrmc-scale
+#!/usr/bin/env bash
+set -euo pipefail
+
+source /etc/default/jrmc
+
+action="${1:-status}"
+
+allowed_scale() {
+  case "${1:-}" in
+    100|125|150|175|200) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+update_default() {
+  local key="$1"
+  local value="$2"
+  python3 - "$key" "$value" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path('/etc/default/jrmc')
+key = sys.argv[1]
+value = sys.argv[2]
+lines = path.read_text().splitlines()
+new_lines = []
+found = False
+for line in lines:
+    if line.startswith(f"{key}="):
+        new_lines.append(f'{key}="{value}"')
+        found = True
+    else:
+        new_lines.append(line)
+if not found:
+    new_lines.append(f'{key}="{value}"')
+path.write_text("\n".join(new_lines) + "\n")
+PY
+}
+
+apply_shared_display_now() {
+  if systemctl is-active --quiet jrmc-vnc.service; then
+    runuser -u "${JRMC_USER}" -- env \
+      HOME="${JRMC_HOME}" \
+      USER="${JRMC_USER}" \
+      DISPLAY=":${JRMC_DISPLAY}" \
+      XAUTHORITY="${JRMC_HOME}/.Xauthority" \
+      /usr/local/bin/jrmc-scale-profile apply-session >/dev/null 2>&1 || true
+  fi
+}
+
+print_status() {
+  /usr/local/bin/jrmc-scale-profile summary
+  echo "shared-ui: $(systemctl is-active jrmc-ui.service 2>/dev/null || true)"
+  echo "shared-vnc-backend: $(systemctl is-active jrmc-vnc.service 2>/dev/null || true)"
+  echo "native-rdp: $(systemctl is-active xrdp.service 2>/dev/null || true)"
+}
+
+case "${action}" in
+  set)
+    scale="${2:-}"
+    if ! allowed_scale "${scale}"; then
+      echo "Usage: jrmc-scale set {100|125|150|175|200}" >&2
+      exit 1
+    fi
+    update_default JRMC_UI_SCALE "${scale}"
+    source /etc/default/jrmc
+    apply_shared_display_now
+    echo "JRMC UI scale set to ${scale}%."
+    echo "Future noVNC, native VNC, and native RDP sessions will use the new preset."
+    if systemctl is-active --quiet jrmc-ui.service; then
+      echo "The current shared UI session will be updated best-effort within a few seconds."
+    fi
+    if systemctl is-active --quiet xrdp.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_RDP_PIDFILE}" >/dev/null 2>&1; then
+      echo "Active RDP sessions receive updated DPI hints best-effort; reconnect if the client ignores them."
+    fi
+    echo "For the sharpest result, keep client-side scaling at 100% / 1:1 when using high JRMC scale presets."
+    ;;
+  status)
+    print_status
+    ;;
+  apply-current)
+    apply_shared_display_now
+    echo "Reapplied JRMC scale hints to the shared display."
+    ;;
+  *)
+    echo "Usage: jrmc-scale {set <100|125|150|175|200>|status|apply-current}" >&2
+    exit 1
+    ;;
+esac
+EOF
+chmod +x /usr/local/bin/jrmc-scale
 
 cat <<'EOF' >/usr/local/bin/jrmc-window-fit
 #!/usr/bin/env bash
@@ -420,6 +678,8 @@ export USER="${JRMC_USER}"
 export DISPLAY="${DISPLAY:-:${JRMC_DISPLAY}}"
 export XAUTHORITY="${XAUTHORITY:-${JRMC_HOME}/.Xauthority}"
 
+eval "$(/usr/local/bin/jrmc-scale-profile exports)"
+
 service_is_busy() {
   local state
   state="$(systemctl show -p ActiveState --value "$1" 2>/dev/null || true)"
@@ -441,13 +701,25 @@ if /usr/local/bin/jrmc-pidfile-active "${JRMC_RDP_PIDFILE}" >/dev/null 2>&1; the
   exit 1
 fi
 
+for _i in $(seq 1 30); do
+  xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1 && break
+  sleep 0.5
+done
+
 cleanup() {
   rm -f "${JRMC_RDP_PIDFILE}" "${JRMC_RDP_OPENBOX_PIDFILE}"
+  if [[ -n "${scale_watch_pid:-}" ]] && kill -0 "${scale_watch_pid}" >/dev/null 2>&1; then
+    kill -TERM "${scale_watch_pid}" >/dev/null 2>&1 || true
+  fi
   if [[ -n "${openbox_pid:-}" ]] && kill -0 "${openbox_pid}" >/dev/null 2>&1; then
     kill -TERM "${openbox_pid}" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
+
+/usr/local/bin/jrmc-scale-profile apply-session >/dev/null 2>&1 || true
+/usr/local/bin/jrmc-scale-watch >/dev/null 2>&1 &
+scale_watch_pid=$!
 
 nohup /usr/bin/openbox >/tmp/jrmc-openbox-rdp.log 2>&1 &
 openbox_pid=$!
@@ -476,6 +748,9 @@ source /etc/default/jrmc
 export HOME="${JRMC_HOME}"
 export USER="${JRMC_USER}"
 export DISPLAY=":${JRMC_DISPLAY}"
+export XAUTHORITY="${JRMC_HOME}/.Xauthority"
+
+eval "$(/usr/local/bin/jrmc-scale-profile exports)"
 
 service_is_busy() {
   local state
@@ -497,8 +772,15 @@ done
 
 cleanup() {
   rm -f "${JRMC_UI_PIDFILE}"
+  if [[ -n "${scale_watch_pid:-}" ]] && kill -0 "${scale_watch_pid}" >/dev/null 2>&1; then
+    kill -TERM "${scale_watch_pid}" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
+
+/usr/local/bin/jrmc-scale-profile apply-session >/dev/null 2>&1 || true
+/usr/local/bin/jrmc-scale-watch >/dev/null 2>&1 &
+scale_watch_pid=$!
 
 /usr/bin/mediacenter35 &
 app_pid=$!
@@ -768,6 +1050,7 @@ Password: ${password}
 
 Default mode: Media Server
 Interactive UI: open Dashboard, then Launch JRMC UI.
+UI Scale: set 100%-200% presets from Dashboard or jrmc-scale; active sessions update best-effort.
 Native RDP: optional from Dashboard on port ${JRMC_NATIVE_RDP_PORT} for Remmina using the same username and password as Dashboard. Enabling RDP stops Media Server and the shared noVNC/native VNC UI session.
 Native VNC: optional from Dashboard on port ${JRMC_NATIVE_VNC_PORT} while UI mode is active for TigerVNC compatibility using TLSPlain and the same Dashboard credentials. Native VNC shares the browser UI session and is unavailable while native RDP is active.
 CREDS
@@ -829,6 +1112,7 @@ case "${mode}" in
     echo "xrdp: $(systemctl is-active xrdp.service 2>/dev/null || true)"
     echo "native-vnc: $([[ "${JRMC_NATIVE_VNC_ENABLED:-0}" == "1" ]] && echo enabled || echo disabled)"
     echo "native-rdp: $([[ "${JRMC_NATIVE_RDP_ENABLED:-0}" == "1" ]] && echo enabled || echo disabled)"
+    echo "ui-scale: ${JRMC_UI_SCALE:-100}%"
     ;;
   *)
     echo "Usage: jrmc-mode {ui|mediaserver|stop-ui|stop-server|status}" >&2
@@ -1093,11 +1377,22 @@ cat <<'EOF' >${CGI_BIN}/jrmc-control.py
 import html
 import os
 import subprocess
+import sys
 from urllib.parse import parse_qs
 
 
-query = parse_qs(os.environ.get("QUERY_STRING", ""), keep_blank_values=True)
-action = query.get("action", [""])[0]
+def read_params() -> dict[str, list[str]]:
+  params = parse_qs(os.environ.get("QUERY_STRING", ""), keep_blank_values=True)
+  if os.environ.get("REQUEST_METHOD", "GET").upper() == "POST":
+    length = int(os.environ.get("CONTENT_LENGTH", "0") or "0")
+    body = parse_qs(sys.stdin.read(length), keep_blank_values=True)
+    params.update(body)
+  return params
+
+
+params = read_params()
+action = params.get("action", [""])[0]
+scale = params.get("ui_scale", [""])[0].strip()
 
 mapping = {
     "start-ui": ["sudo", "/usr/local/bin/jrmc-mode", "ui"],
@@ -1110,16 +1405,24 @@ mapping = {
     "enable-direct-vnc": ["sudo", "/usr/local/bin/jrmc-direct-vnc", "enable"],
     "disable-direct-vnc": ["sudo", "/usr/local/bin/jrmc-direct-vnc", "disable"],
     "direct-vnc-status": ["sudo", "/usr/local/bin/jrmc-direct-vnc", "status"],
+    "ui-scale-status": ["sudo", "/usr/local/bin/jrmc-scale", "status"],
 }
 
 print("Content-Type: text/html")
 print()
 
-if action not in mapping:
-    print("<html><body><h1>Invalid action</h1><p><a href='/dashboard/'>Back</a></p></body></html>")
+if action == "set-ui-scale":
+  if scale not in {"100", "125", "150", "175", "200"}:
+    print("<html><body><h1>Invalid scale preset</h1><p><a href='/dashboard/'>Back</a></p></body></html>")
     raise SystemExit(0)
+  command = ["sudo", "/usr/local/bin/jrmc-scale", "set", scale]
+elif action in mapping:
+  command = mapping[action]
+else:
+  print("<html><body><h1>Invalid action</h1><p><a href='/dashboard/'>Back</a></p></body></html>")
+  raise SystemExit(0)
 
-result = subprocess.run(mapping[action], capture_output=True, text=True, check=False)
+result = subprocess.run(command, capture_output=True, text=True, check=False)
 stdout = html.escape((result.stdout or "").strip())
 stderr = html.escape((result.stderr or "").strip())
 status = "completed" if result.returncode == 0 else "failed"
@@ -1173,8 +1476,12 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
     body{font-family:system-ui,sans-serif;max-width:900px;margin:3rem auto;padding:0 1rem;background:#0f172a;color:#e2e8f0}
     .card{background:#111827;border:1px solid #334155;border-radius:12px;padding:1.5rem;margin-bottom:1rem}
     .actions{display:flex;gap:.75rem;flex-wrap:wrap}
-    a{display:inline-block;padding:.9rem 1.2rem;border-radius:8px;background:#2563eb;color:white;text-decoration:none}
+    a,button{display:inline-block;padding:.9rem 1.2rem;border-radius:8px;background:#2563eb;color:white;text-decoration:none;border:0;font-weight:600;cursor:pointer}
     .alt{background:#475569}
+    .stack{display:grid;gap:.75rem}
+    .scale-form{display:grid;gap:.75rem;max-width:420px}
+    label{font-weight:600}
+    select{width:100%;padding:.8rem;border-radius:8px;border:1px solid #475569;background:#020617;color:#e2e8f0}
     code{background:#020617;padding:.15rem .35rem;border-radius:4px}
   </style>
 </head>
@@ -1204,6 +1511,28 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
     <p>Native RDP listens on port <code>3389</code> for Remmina and other RDP clients. Sign in with the same username and password used for Dashboard. Enabling native RDP stops Media Server and the shared noVNC/native VNC UI session so JRiver keeps one writable library owner.</p>
     <p>Native VNC listens on port <code>5902</code>, uses <code>TLSPlain</code> with the same Dashboard username and password, and is only reachable while JRMC UI mode is active. Browser noVNC keeps the dedicated Xtigervnc backend, while TigerVNC-compatible native clients use a separate <code>x0vncserver</code> desktop-sharing backend.</p>
     <p>Browser noVNC and native VNC share the same JRMC UI session. Native RDP uses a separate session and is mutually exclusive with that shared UI path.</p>
+  </div>
+  <div class="card">
+    <h2>UI Scale</h2>
+    <div class="stack">
+      <form class="scale-form" method="post" action="/cgi-bin/jrmc-control.py">
+        <input type="hidden" name="action" value="set-ui-scale">
+        <label for="ui_scale">JRMC UI scale preset</label>
+        <select id="ui_scale" name="ui_scale">
+          <option value="100" selected>100% — Default sharpness</option>
+          <option value="125">125% — Slightly larger controls</option>
+          <option value="150">150% — Comfortable HiDPI preset</option>
+          <option value="175">175% — Large desktop controls</option>
+          <option value="200">200% — Maximum built-in scale</option>
+        </select>
+        <button type="submit">Apply UI Scale</button>
+      </form>
+      <div class="actions">
+        <a class="alt" href="/cgi-bin/jrmc-control.py?action=ui-scale-status">UI Scale Status</a>
+      </div>
+    </div>
+    <p>Scale presets persist for future noVNC, native VNC, and native RDP sessions. Running sessions pick up updated DPI and desktop-size hints best-effort.</p>
+    <p>For the sharpest result, prefer 100% / 1:1 client-side scaling in noVNC, TigerVNC, and Remmina when using a larger JRMC scale preset.</p>
   </div>
   <div class="card">
     <h2>Activation</h2>
@@ -1302,7 +1631,7 @@ PY
 systemctl disable --now xrdp.service xrdp-sesman.service >/dev/null 2>&1 || true
 
 cat <<'EOF' >/etc/sudoers.d/jrmc-web
-www-data ALL=(root) NOPASSWD: /usr/local/bin/jrmc-mode, /usr/local/bin/jrmc-direct-rdp, /usr/local/bin/jrmc-direct-vnc, /usr/local/bin/jrmc-set-web-credentials
+www-data ALL=(root) NOPASSWD: /usr/local/bin/jrmc-mode, /usr/local/bin/jrmc-direct-rdp, /usr/local/bin/jrmc-direct-vnc, /usr/local/bin/jrmc-scale, /usr/local/bin/jrmc-set-web-credentials
 EOF
 chmod 0440 /etc/sudoers.d/jrmc-web
 
@@ -1414,6 +1743,7 @@ echo
 echo "Web setup URL:        https://<container-ip>:5800/setup/"
 echo "Default mode:         Media Server"
 echo "Interactive UI:       noVNC via Dashboard with remote desktop resize"
+echo "UI Scale:             Presets 100/125/150/175/200 via Dashboard or jrmc-scale"
 echo "Native RDP:           Optional on port 3389 for Remmina using the same Dashboard username; stops Media Server and the shared UI when enabled"
 echo "Native VNC:           Optional on port 5902 with TLSPlain for TigerVNC while UI mode is active; shares the browser UI session and is unavailable while RDP is active"
 echo
@@ -1429,6 +1759,8 @@ select opt in \
   "Enable Native VNC" \
   "Disable Native VNC" \
   "Show Native VNC status" \
+  "Set UI scale preset" \
+  "Show UI scale status" \
   "Show service status" \
   "Import .mjr activation file" \
   "Update JRiver Media Center" \
@@ -1464,6 +1796,13 @@ select opt in \
     ;;
   "Show Native VNC status")
     /usr/local/bin/jrmc-direct-vnc status
+    ;;
+  "Set UI scale preset")
+    read -r -p "Choose UI scale preset (100, 125, 150, 175, 200): " scale
+    /usr/local/bin/jrmc-scale set "$scale"
+    ;;
+  "Show UI scale status")
+    /usr/local/bin/jrmc-scale status
     ;;
   "Show service status")
     /usr/local/bin/jrmc-mode status

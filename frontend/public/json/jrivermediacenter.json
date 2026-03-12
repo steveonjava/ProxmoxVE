@@ -53,6 +53,10 @@
       "type": "info"
     },
     {
+      "text": "Dashboard includes 100%-200% JRMC UI scale presets. The selected preset persists for future noVNC, native VNC, and native RDP sessions, and the container applies live DPI and desktop-size hints to active sessions on a best-effort basis.",
+      "type": "info"
+    },
+    {
       "text": "Run `jrmc-configure` for local administration, `jrmc-mode` to switch between Media Server and UI modes, and `jrmc-activate /path/to/file.mjr` to import a license restore file.",
       "type": "info"
     },
