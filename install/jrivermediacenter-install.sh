@@ -79,6 +79,8 @@ JRMC_BOOTSTRAP_FILE="${CONFIG_DIR}/bootstrap-complete"
 JRMC_NATIVE_VNC_ENABLED="0"
 JRMC_VNC_PAM_SERVICE="jrmc-vnc"
 JRMC_NATIVE_VNC_SECURITY="TLSPlain"
+JRMC_WINDOW_FIT_LOG="/tmp/jrmc-window-fit.log"
+JRMC_NATIVE_VNC_LOG="/tmp/jrmc-native-vnc.log"
 EOF
 chmod 0644 /etc/default/jrmc
 msg_ok "Prepared Runtime Directories"
@@ -155,6 +157,26 @@ export HOME="${JRMC_HOME}"
 export USER="${JRMC_USER}"
 export DISPLAY=":${JRMC_DISPLAY}"
 export XAUTHORITY="${JRMC_HOME}/.Xauthority"
+
+log_debug() {
+  local message="$1"
+  printf '%s [%s] %s\n' "$(date '+%F %T')" "$$" "${message}" >>"${JRMC_WINDOW_FIT_LOG}"
+}
+
+window_geometry() {
+  local wid="$1"
+  xwininfo -id "${wid}" 2>/dev/null | awk '
+    /Absolute upper-left X:/ { x=$4 }
+    /Absolute upper-left Y:/ { y=$4 }
+    /Width:/ { width=$2 }
+    /Height:/ { height=$2 }
+    END {
+      if (width && height) {
+        printf "x=%s y=%s width=%s height=%s", x, y, width, height
+      }
+    }
+  '
+}
 
 if pgrep -u "${JRMC_USER}" -f '/usr/bin/openbox' >/dev/null 2>&1; then
   exit 0
@@ -267,6 +289,7 @@ fit_window() {
   local height="$3"
   local _attempt
 
+  log_debug "fit start wid=${wid} target=${width}x${height} current=$(window_geometry "${wid}")"
   for _attempt in 1 2; do
     xdotool windowactivate "${wid}" >/dev/null 2>&1 || true
     xdotool windowraise "${wid}" >/dev/null 2>&1 || true
@@ -280,19 +303,25 @@ fit_window() {
     xdotool windowstate --add MAXIMIZED_VERT "${wid}" >/dev/null 2>&1 || true
     xdotool windowstate --add MAXIMIZED_HORZ "${wid}" >/dev/null 2>&1 || true
     sleep 0.2
+    log_debug "fit attempt=${_attempt} wid=${wid} now=$(window_geometry "${wid}")"
   done
 }
+
+log_debug "window-fit start app_pid=${app_pid} display=${DISPLAY}"
+trap 'log_debug "window-fit exit app_pid=${app_pid}"' EXIT
 
 window_id=""
 for _i in $(seq 1 120); do
   window_id="$(find_window_id || true)"
   if [[ -n "${window_id}" ]]; then
+    log_debug "initial window_id=${window_id} props=$(window_properties "${window_id}" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g')"
     break
   fi
   sleep 0.5
 done
 
 if [[ -z "${window_id}" ]]; then
+  log_debug "no window found for app_pid=${app_pid}"
   exit 0
 fi
 
@@ -300,6 +329,7 @@ last_size=""
 while kill -0 "${app_pid}" >/dev/null 2>&1; do
   current_size="$(desktop_size || true)"
   if [[ -z "${current_size}" ]]; then
+    log_debug "desktop size unavailable"
     sleep 1
     continue
   fi
@@ -307,20 +337,27 @@ while kill -0 "${app_pid}" >/dev/null 2>&1; do
   if [[ "${current_size}" != "${last_size}" ]]; then
     current_window_id="$(find_window_id || true)"
     if [[ -n "${current_window_id:-}" ]]; then
+      if [[ "${current_window_id}" != "${window_id}" ]]; then
+        log_debug "window id changed ${window_id} -> ${current_window_id}"
+      fi
       window_id="${current_window_id}"
     fi
 
     read -r width height <<<"${current_size}"
+    log_debug "desktop size changed ${last_size:-unset} -> ${current_size} using wid=${window_id}"
     fit_window "${window_id}" "${width}" "${height}"
     last_size="${current_size}"
   fi
 
   if ! xwininfo -id "${window_id}" >/dev/null 2>&1; then
+    log_debug "window id ${window_id} no longer valid; searching again"
     window_id="$(find_window_id || true)"
     if [[ -z "${window_id}" ]]; then
+      log_debug "window not found after invalidation"
       sleep 1
       continue
     fi
+    log_debug "recovered window_id=${window_id}"
     last_size=""
   fi
 
@@ -386,6 +423,10 @@ export HOME="${JRMC_HOME}"
 export USER="${JRMC_USER}"
 export DISPLAY=":${JRMC_DISPLAY}"
 export XAUTHORITY="${JRMC_HOME}/.Xauthority"
+
+: >"${JRMC_NATIVE_VNC_LOG}"
+exec > >(tee -a "${JRMC_NATIVE_VNC_LOG}") 2>&1
+echo "$(date '+%F %T') [$$] jrmc-native-vnc-start display=${DISPLAY} port=${JRMC_NATIVE_VNC_PORT} security=${JRMC_NATIVE_VNC_SECURITY}"
 
 for _i in $(seq 1 30); do
   xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1 && break
