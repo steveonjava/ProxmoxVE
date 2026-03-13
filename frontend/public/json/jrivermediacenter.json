@@ -45,15 +45,15 @@
       "type": "info"
     },
     {
-      "text": "Dashboard can optionally enable native RDP access on port 3389 for Remmina and similar RDP clients. Sign in with the same Dashboard username and password. Enabling RDP stops Media Server and the shared noVNC/native VNC UI session so JRiver keeps one writable library owner.",
+      "text": "Dashboard now exposes three primary modes: Media Server, VNC, and RDP. Choosing one mode cleanly tears down the others first so JRiver keeps one writable library owner.",
       "type": "info"
     },
     {
-      "text": "Dashboard can optionally enable native VNC access on port 5902 while UI mode is active. Native VNC uses TLSPlain with the same Dashboard username and password for TigerVNC-compatible clients, while browser noVNC keeps its separate Xtigervnc backend and native desktop sharing uses x0vncserver. Browser noVNC and native VNC share one session, and that shared UI path is mutually exclusive with native RDP.",
+      "text": "VNC mode enables both browser noVNC and direct VNC on port 5902 at the same time against one shared JRMC session. Direct VNC uses TLSPlain with the same Dashboard username and password for TigerVNC-compatible clients.",
       "type": "info"
     },
     {
-      "text": "Dashboard includes 100%-200% JRMC UI scale presets. The selected preset persists for future noVNC, native VNC, and native RDP sessions, and the container applies live DPI and desktop-size hints to active sessions on a best-effort basis.",
+      "text": "Dashboard includes 100%-200% JRMC UI scale presets. In VNC mode, larger presets request a larger server framebuffer so noVNC can scale it back down cleanly, while the container still applies live DPI and desktop-size hints best-effort to active sessions.",
       "type": "info"
     },
     {
