@@ -290,7 +290,7 @@ def apply_session(values: dict[str, str], profile: dict[str, float | int | str])
     if display == str(profile["shared_display"]):
         geometry = f'{profile["width"]}x{profile["height"]}'
         subprocess.run(["xrandr", "--fb", geometry], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-      subprocess.run(["xrandr", "--size", geometry], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        subprocess.run(["xrandr", "--size", geometry], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
     return 0
 
