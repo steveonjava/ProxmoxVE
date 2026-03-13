@@ -80,6 +80,7 @@ JRMC_WEB_PORT="${JRMC_WEB_PORT}"
 JRMC_WIDTH="1440"
 JRMC_HEIGHT="900"
 JRMC_UI_SCALE="100"
+JRMC_MODE="mediaserver"
 JRMC_WEB_HTPASSWD="/etc/nginx/jrmc.htpasswd"
 JRMC_VNC_HTPASSWD="${CONFIG_DIR}/native-vnc.htpasswd"
 JRMC_BOOTSTRAP_FILE="${CONFIG_DIR}/bootstrap-complete"
@@ -223,8 +224,8 @@ def build_profile(values: dict[str, str]) -> dict[str, float | int | str]:
 
     base_width = max(800, int_value(values, "JRMC_WIDTH", 1440))
     base_height = max(600, int_value(values, "JRMC_HEIGHT", 900))
-    width = max(640, math.floor((base_width * 100 / scale) + 0.5))
-    height = max(480, math.floor((base_height * 100 / scale) + 0.5))
+  width = max(640, math.floor((base_width * scale / 100) + 0.5))
+  height = max(480, math.floor((base_height * scale / 100) + 0.5))
     dpi = max(96, math.floor((96 * scale / 100) + 0.5))
     gdk_scale = 2 if scale >= 175 else 1
     gdk_dpi_scale = (scale / 100) / gdk_scale
@@ -287,19 +288,19 @@ def apply_session(values: dict[str, str], profile: dict[str, float | int | str])
 
     if display == str(profile["shared_display"]):
         geometry = f'{profile["width"]}x{profile["height"]}'
-        subprocess.run(["xrandr", "--size", geometry], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
         subprocess.run(["xrandr", "--fb", geometry], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+      subprocess.run(["xrandr", "--size", geometry], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
     return 0
 
 
 def print_summary(profile: dict[str, float | int | str]) -> None:
     print(f'ui-scale: {profile["scale"]}%')
-    print(f'shared-ui-geometry: {profile["width"]}x{profile["height"]} (base {profile["base_width"]}x{profile["base_height"]})')
+    print(f'vnc-framebuffer: {profile["width"]}x{profile["height"]} (base {profile["base_width"]}x{profile["base_height"]})')
     print(f'session-dpi: {profile["dpi"]}')
     print(f'gtk-hints: GDK_SCALE={profile["gdk_scale"]} GDK_DPI_SCALE={format_float(float(profile["gdk_dpi_scale"]))}')
     print(f'qt-hints: QT_SCALE_FACTOR={format_float(float(profile["qt_scale_factor"]))}')
-    print('client-guidance: Prefer 100% / 1:1 scaling in noVNC, TigerVNC, and Remmina for the sharpest result.')
+    print('client-guidance: VNC mode renders a larger server framebuffer as scale increases. Let noVNC scale the view to fit and prefer 100% / 1:1 scaling in TigerVNC and Remmina for the sharpest result.')
 
 
 def main() -> int:
@@ -1049,10 +1050,10 @@ Username: ${username}
 Password: ${password}
 
 Default mode: Media Server
-Interactive UI: open Dashboard, then Launch JRMC UI.
+Modes: choose Media Server, VNC, or RDP from Dashboard or jrmc-mode.
+VNC mode: browser noVNC and direct VNC on port ${JRMC_NATIVE_VNC_PORT} run together against the same JRMC session using the Dashboard username and password.
+RDP mode: native RDP on port ${JRMC_NATIVE_RDP_PORT} for Remmina using the same username and password as Dashboard.
 UI Scale: set 100%-200% presets from Dashboard or jrmc-scale; active sessions update best-effort.
-Native RDP: optional from Dashboard on port ${JRMC_NATIVE_RDP_PORT} for Remmina using the same username and password as Dashboard. Enabling RDP stops Media Server and the shared noVNC/native VNC UI session.
-Native VNC: optional from Dashboard on port ${JRMC_NATIVE_VNC_PORT} while UI mode is active for TigerVNC compatibility using TLSPlain and the same Dashboard credentials. Native VNC shares the browser UI session and is unavailable while native RDP is active.
 CREDS
 
 systemctl reload nginx
@@ -1067,69 +1068,6 @@ source /etc/default/jrmc
 
 mode="${1:-status}"
 
-stop_rdp_runtime() {
-  systemctl stop xrdp.service xrdp-sesman.service >/dev/null 2>&1 || true
-  /usr/local/bin/jrmc-stop-rdp-session
-}
-
-case "${mode}" in
-  ui)
-    stop_rdp_runtime
-    systemctl stop jrmc-mediaserver.service || true
-    systemctl restart jrmc-vnc.service
-    systemctl restart jrmc-websockify.service
-    systemctl restart jrmc-ui.service
-    if [[ "${JRMC_NATIVE_VNC_ENABLED:-0}" == "1" ]]; then
-      systemctl restart jrmc-native-vnc.service
-    else
-      systemctl stop jrmc-native-vnc.service || true
-    fi
-    echo "JRMC UI mode started. Native RDP runtime was stopped to keep the JRiver library writable."
-    ;;
-  mediaserver)
-    stop_rdp_runtime
-    systemctl stop jrmc-native-vnc.service jrmc-ui.service jrmc-websockify.service || true
-    systemctl restart jrmc-vnc.service
-    systemctl restart jrmc-mediaserver.service
-    echo "JRMC Media Server mode started. Native RDP runtime was stopped to avoid a second JRiver writer session."
-    ;;
-  stop-ui)
-    systemctl stop jrmc-native-vnc.service jrmc-ui.service jrmc-websockify.service jrmc-vnc.service || true
-    rm -f "${JRMC_UI_PIDFILE}"
-    echo "JRMC UI mode stopped."
-    ;;
-  stop-server)
-    systemctl stop jrmc-mediaserver.service || true
-    systemctl stop jrmc-vnc.service || true
-    echo "JRMC Media Server mode stopped."
-    ;;
-  status)
-    echo "jrmc-mediaserver: $(systemctl is-active jrmc-mediaserver.service 2>/dev/null || true)"
-    echo "jrmc-vnc: $(systemctl is-active jrmc-vnc.service 2>/dev/null || true)"
-    echo "jrmc-websockify: $(systemctl is-active jrmc-websockify.service 2>/dev/null || true)"
-    echo "jrmc-ui: $(systemctl is-active jrmc-ui.service 2>/dev/null || true)"
-    echo "jrmc-native-vnc: $(systemctl is-active jrmc-native-vnc.service 2>/dev/null || true)"
-    echo "xrdp: $(systemctl is-active xrdp.service 2>/dev/null || true)"
-    echo "native-vnc: $([[ "${JRMC_NATIVE_VNC_ENABLED:-0}" == "1" ]] && echo enabled || echo disabled)"
-    echo "native-rdp: $([[ "${JRMC_NATIVE_RDP_ENABLED:-0}" == "1" ]] && echo enabled || echo disabled)"
-    echo "ui-scale: ${JRMC_UI_SCALE:-100}%"
-    ;;
-  *)
-    echo "Usage: jrmc-mode {ui|mediaserver|stop-ui|stop-server|status}" >&2
-    exit 1
-    ;;
-esac
-EOF
-chmod +x /usr/local/bin/jrmc-mode
-
-cat <<'EOF' >/usr/local/bin/jrmc-direct-vnc
-#!/usr/bin/env bash
-set -euo pipefail
-
-source /etc/default/jrmc
-
-action="${1:-status}"
-
 update_default() {
   local key="$1"
   local value="$2"
@@ -1155,61 +1093,127 @@ path.write_text("\n".join(new_lines) + "\n")
 PY
 }
 
-restart_ui_stack_if_needed() {
-  local ui_active=0
-  source /etc/default/jrmc
-
-  if systemctl is-active --quiet jrmc-ui.service; then
-    ui_active=1
-  fi
-
-  if (( ui_active )); then
-    if [[ "${JRMC_NATIVE_VNC_ENABLED:-0}" == "1" ]]; then
-      systemctl restart jrmc-native-vnc.service
-    else
-      systemctl stop jrmc-native-vnc.service || true
-    fi
-  fi
+persist_mode() {
+  local new_mode="$1"
+  update_default JRMC_MODE "${new_mode}"
+  case "${new_mode}" in
+    mediaserver)
+      update_default JRMC_NATIVE_VNC_ENABLED 0
+      update_default JRMC_NATIVE_RDP_ENABLED 0
+      ;;
+    vnc)
+      update_default JRMC_NATIVE_VNC_ENABLED 1
+      update_default JRMC_NATIVE_RDP_ENABLED 0
+      ;;
+    rdp)
+      update_default JRMC_NATIVE_VNC_ENABLED 0
+      update_default JRMC_NATIVE_RDP_ENABLED 1
+      ;;
+  esac
 }
 
-print_status() {
-  source /etc/default/jrmc
-  local state="disabled"
-  if [[ "${JRMC_NATIVE_VNC_ENABLED:-0}" == "1" ]]; then
-    state="enabled"
-  fi
-
-  echo "native-vnc: ${state}"
-  echo "ui-mode: $(systemctl is-active jrmc-ui.service 2>/dev/null || true)"
-  echo "native-vnc-service: $(systemctl is-active jrmc-native-vnc.service 2>/dev/null || true)"
-  if [[ "${state}" == "enabled" ]] && systemctl is-active --quiet jrmc-native-vnc.service; then
-    echo "endpoint: $(hostname -I | awk '{print $1}'):${JRMC_NATIVE_VNC_PORT}"
-    echo "security: ${JRMC_NATIVE_VNC_SECURITY} using the same username/password as Dashboard"
-    echo "backend: x0vncserver desktop-sharing backend for TigerVNC compatibility"
-  elif [[ "${state}" == "enabled" ]] && (systemctl is-active --quiet xrdp.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_RDP_PIDFILE}" >/dev/null 2>&1); then
-    echo "endpoint: unavailable while native RDP owns the interactive JRMC session"
+current_mode() {
+  if systemctl is-active --quiet xrdp.service || systemctl is-active --quiet xrdp-sesman.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_RDP_PIDFILE}" >/dev/null 2>&1; then
+    echo "rdp"
+  elif systemctl is-active --quiet jrmc-ui.service || systemctl is-active --quiet jrmc-websockify.service || systemctl is-active --quiet jrmc-native-vnc.service; then
+    echo "vnc"
+  elif systemctl is-active --quiet jrmc-mediaserver.service; then
+    echo "mediaserver"
   else
-    echo "endpoint: unavailable until native VNC is enabled and UI mode is running"
+    echo "stopped"
   fi
 }
+
+stop_rdp_runtime() {
+  systemctl stop xrdp.service xrdp-sesman.service >/dev/null 2>&1 || true
+  /usr/local/bin/jrmc-stop-rdp-session
+}
+
+stop_vnc_runtime() {
+  systemctl stop jrmc-native-vnc.service jrmc-ui.service jrmc-websockify.service jrmc-vnc.service >/dev/null 2>&1 || true
+  rm -f "${JRMC_UI_PIDFILE}"
+}
+
+case "${mode}" in
+  ui|vnc)
+    stop_rdp_runtime
+    systemctl stop jrmc-mediaserver.service || true
+    systemctl restart jrmc-vnc.service
+    systemctl restart jrmc-websockify.service
+    systemctl restart jrmc-ui.service
+    systemctl restart jrmc-native-vnc.service
+    persist_mode vnc
+    echo "JRMC VNC mode started. Browser noVNC and direct VNC now share the same writable JRMC session."
+    ;;
+  mediaserver|server)
+    stop_rdp_runtime
+    systemctl stop jrmc-native-vnc.service jrmc-ui.service jrmc-websockify.service || true
+    systemctl restart jrmc-vnc.service
+    systemctl restart jrmc-mediaserver.service
+    persist_mode mediaserver
+    echo "JRMC Media Server mode started. Interactive VNC and RDP transports were stopped."
+    ;;
+  rdp)
+    systemctl stop jrmc-mediaserver.service >/dev/null 2>&1 || true
+    stop_vnc_runtime
+    /usr/local/bin/jrmc-stop-rdp-session
+    systemctl enable --now xrdp-sesman.service xrdp.service
+    persist_mode rdp
+    echo "JRMC RDP mode started. VNC transports were stopped so RDP owns the writable JRMC session."
+    ;;
+  stop-ui)
+    stop_vnc_runtime
+    persist_mode mediaserver
+    echo "JRMC VNC mode stopped. Choose another mode to continue using JRMC."
+    ;;
+  stop-server)
+    systemctl stop jrmc-mediaserver.service || true
+    systemctl stop jrmc-vnc.service || true
+    echo "JRMC Media Server mode stopped."
+    ;;
+  status)
+    active_mode="$(current_mode)"
+    echo "desired-mode: ${JRMC_MODE:-mediaserver}"
+    echo "active-mode: ${active_mode}"
+    echo "jrmc-mediaserver: $(systemctl is-active jrmc-mediaserver.service 2>/dev/null || true)"
+    echo "jrmc-vnc: $(systemctl is-active jrmc-vnc.service 2>/dev/null || true)"
+    echo "jrmc-websockify: $(systemctl is-active jrmc-websockify.service 2>/dev/null || true)"
+    echo "jrmc-ui: $(systemctl is-active jrmc-ui.service 2>/dev/null || true)"
+    echo "jrmc-native-vnc: $(systemctl is-active jrmc-native-vnc.service 2>/dev/null || true)"
+    echo "xrdp: $(systemctl is-active xrdp.service 2>/dev/null || true)"
+    echo "ui-scale: ${JRMC_UI_SCALE:-100}%"
+    if [[ "${active_mode}" == "vnc" ]]; then
+      echo "novnc: https://$(hostname -I | awk '{print $1}'):${JRMC_WEB_PORT}/novnc/vnc.html?autoconnect=1&resize=scale&path=/websockify"
+      echo "direct-vnc: $(hostname -I | awk '{print $1}'):${JRMC_NATIVE_VNC_PORT}"
+    elif [[ "${active_mode}" == "rdp" ]]; then
+      echo "rdp: $(hostname -I | awk '{print $1}'):${JRMC_NATIVE_RDP_PORT}"
+      echo "rdp-user: ${JRMC_NATIVE_RDP_USER}"
+    fi
+    ;;
+  *)
+    echo "Usage: jrmc-mode {vnc|ui|rdp|mediaserver|server|stop-ui|stop-server|status}" >&2
+    exit 1
+    ;;
+esac
+EOF
+chmod +x /usr/local/bin/jrmc-mode
+
+cat <<'EOF' >/usr/local/bin/jrmc-direct-vnc
+#!/usr/bin/env bash
+set -euo pipefail
+
+action="${1:-status}"
 
 case "${action}" in
   enable)
-    update_default JRMC_NATIVE_VNC_ENABLED 1
-    restart_ui_stack_if_needed
-    if systemctl is-active --quiet xrdp.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_RDP_PIDFILE}" >/dev/null 2>&1; then
-      echo "Native VNC enabled in configuration. It will remain unavailable until native RDP is disabled and shared UI mode is started."
-    else
-      echo "Native VNC enabled. Port ${JRMC_NATIVE_VNC_PORT} will accept the same Dashboard username/password with ${JRMC_NATIVE_VNC_SECURITY} while UI mode is active. If the UI was already running, the x0vncserver desktop-sharing service was started immediately."
-    fi
+    exec /usr/local/bin/jrmc-mode vnc
     ;;
   disable)
-    update_default JRMC_NATIVE_VNC_ENABLED 0
-    restart_ui_stack_if_needed
-    echo "Native VNC disabled. Browser noVNC remains available through the Dashboard. If the UI was already running, the native desktop-sharing service was stopped immediately."
+    exec /usr/local/bin/jrmc-mode mediaserver
     ;;
   status)
-    print_status
+    echo "VNC mode bundles browser noVNC and direct VNC together."
+    /usr/local/bin/jrmc-mode status
     ;;
   *)
     echo "Usage: jrmc-direct-vnc {enable|disable|status}" >&2
@@ -1223,78 +1227,18 @@ cat <<'EOF' >/usr/local/bin/jrmc-direct-rdp
 #!/usr/bin/env bash
 set -euo pipefail
 
-source /etc/default/jrmc
-
 action="${1:-status}"
-
-update_default() {
-  local key="$1"
-  local value="$2"
-  python3 - "$key" "$value" <<'PY'
-import sys
-from pathlib import Path
-
-path = Path('/etc/default/jrmc')
-key = sys.argv[1]
-value = sys.argv[2]
-lines = path.read_text().splitlines()
-new_lines = []
-found = False
-for line in lines:
-    if line.startswith(f"{key}="):
-        new_lines.append(f'{key}="{value}"')
-        found = True
-    else:
-        new_lines.append(line)
-if not found:
-    new_lines.append(f'{key}="{value}"')
-path.write_text("\n".join(new_lines) + "\n")
-PY
-}
-
-print_status() {
-  source /etc/default/jrmc
-  local state="disabled"
-  if [[ "${JRMC_NATIVE_RDP_ENABLED:-0}" == "1" ]]; then
-    state="enabled"
-  fi
-
-  echo "native-rdp: ${state}"
-  echo "xrdp-service: $(systemctl is-active xrdp.service 2>/dev/null || true)"
-  echo "xrdp-sesman: $(systemctl is-active xrdp-sesman.service 2>/dev/null || true)"
-  if [[ "${state}" == "enabled" ]] && systemctl is-active --quiet xrdp.service; then
-    echo "endpoint: $(hostname -I | awk '{print $1}'):${JRMC_NATIVE_RDP_PORT}"
-    echo "username: ${JRMC_NATIVE_RDP_USER}"
-    echo "password: same password as Dashboard"
-    echo "backend: xrdp + xorgxrdp session for Remmina and other RDP clients"
-  elif [[ "${state}" == "enabled" ]] && systemctl is-active --quiet jrmc-ui.service; then
-    echo "endpoint: unavailable while the shared noVNC/native VNC UI session is active"
-  elif [[ "${state}" == "enabled" ]] && systemctl is-active --quiet jrmc-mediaserver.service; then
-    echo "endpoint: unavailable while Media Server mode is active"
-  else
-    echo "endpoint: unavailable until native RDP is enabled"
-  fi
-}
 
 case "${action}" in
   enable)
-    update_default JRMC_NATIVE_RDP_ENABLED 1
-    systemctl stop jrmc-mediaserver.service >/dev/null 2>&1 || true
-    /usr/local/bin/jrmc-stop-shared-ui
-    /usr/local/bin/jrmc-stop-rdp-session
-    systemctl enable --now xrdp-sesman.service xrdp.service
-    echo "Native RDP enabled. Media Server and the shared noVNC/native VNC UI session were stopped so RDP can own the writable JRMC session. Connect to port ${JRMC_NATIVE_RDP_PORT} with the same username and password used for Dashboard."
+    exec /usr/local/bin/jrmc-mode rdp
     ;;
   disable)
-    update_default JRMC_NATIVE_RDP_ENABLED 0
-    systemctl disable --now xrdp.service xrdp-sesman.service || true
-    /usr/local/bin/jrmc-stop-rdp-session
-    systemctl restart jrmc-vnc.service
-    systemctl restart jrmc-mediaserver.service
-    echo "Native RDP disabled. JRMC returned to Media Server mode; browser noVNC and optional native VNC remain available through the Dashboard."
+    exec /usr/local/bin/jrmc-mode mediaserver
     ;;
   status)
-    print_status
+    echo "RDP mode is one of the three primary JRMC runtime modes."
+    /usr/local/bin/jrmc-mode status
     ;;
   *)
     echo "Usage: jrmc-direct-rdp {enable|disable|status}" >&2
@@ -1366,7 +1310,7 @@ subprocess.run(["sudo", "/usr/local/bin/jrmc-set-web-credentials", username, pas
 respond(
     "<html><body><h1>JRMC web access configured</h1>"
     "<p>Open <a href='/dashboard/'>Dashboard</a> and sign in with the credentials you just created.</p>"
-    "<p>The container starts in Media Server mode. Use Dashboard to launch the interactive UI.</p>"
+  "<p>The container starts in Media Server mode. Use Dashboard to switch between Media Server, VNC, and RDP as needed.</p>"
     "</body></html>"
 )
 EOF
@@ -1395,16 +1339,20 @@ action = params.get("action", [""])[0]
 scale = params.get("ui_scale", [""])[0].strip()
 
 mapping = {
-    "start-ui": ["sudo", "/usr/local/bin/jrmc-mode", "ui"],
-    "stop-ui": ["sudo", "/usr/local/bin/jrmc-mode", "stop-ui"],
-    "start-server": ["sudo", "/usr/local/bin/jrmc-mode", "mediaserver"],
-    "stop-server": ["sudo", "/usr/local/bin/jrmc-mode", "stop-server"],
-    "enable-direct-rdp": ["sudo", "/usr/local/bin/jrmc-direct-rdp", "enable"],
-    "disable-direct-rdp": ["sudo", "/usr/local/bin/jrmc-direct-rdp", "disable"],
-    "direct-rdp-status": ["sudo", "/usr/local/bin/jrmc-direct-rdp", "status"],
-    "enable-direct-vnc": ["sudo", "/usr/local/bin/jrmc-direct-vnc", "enable"],
-    "disable-direct-vnc": ["sudo", "/usr/local/bin/jrmc-direct-vnc", "disable"],
-    "direct-vnc-status": ["sudo", "/usr/local/bin/jrmc-direct-vnc", "status"],
+  "switch-vnc": ["sudo", "/usr/local/bin/jrmc-mode", "vnc"],
+  "switch-rdp": ["sudo", "/usr/local/bin/jrmc-mode", "rdp"],
+  "switch-mediaserver": ["sudo", "/usr/local/bin/jrmc-mode", "mediaserver"],
+  "mode-status": ["sudo", "/usr/local/bin/jrmc-mode", "status"],
+  "start-ui": ["sudo", "/usr/local/bin/jrmc-mode", "vnc"],
+  "stop-ui": ["sudo", "/usr/local/bin/jrmc-mode", "mediaserver"],
+  "start-server": ["sudo", "/usr/local/bin/jrmc-mode", "mediaserver"],
+  "stop-server": ["sudo", "/usr/local/bin/jrmc-mode", "mediaserver"],
+  "enable-direct-rdp": ["sudo", "/usr/local/bin/jrmc-mode", "rdp"],
+  "disable-direct-rdp": ["sudo", "/usr/local/bin/jrmc-mode", "mediaserver"],
+  "direct-rdp-status": ["sudo", "/usr/local/bin/jrmc-mode", "status"],
+  "enable-direct-vnc": ["sudo", "/usr/local/bin/jrmc-mode", "vnc"],
+  "disable-direct-vnc": ["sudo", "/usr/local/bin/jrmc-mode", "mediaserver"],
+  "direct-vnc-status": ["sudo", "/usr/local/bin/jrmc-mode", "status"],
     "ui-scale-status": ["sudo", "/usr/local/bin/jrmc-scale", "status"],
 }
 
@@ -1459,7 +1407,7 @@ cat <<'EOF' >${WEB_ROOT}/setup/index.html
       <input type="password" name="confirm_password" minlength="8" required>
       <button type="submit">Create web credentials</button>
     </form>
-    <p>After setup, sign in at <a href="/dashboard/">Dashboard</a>, then launch the JRMC UI.</p>
+    <p>After setup, sign in at <a href="/dashboard/">Dashboard</a>, then choose Media Server, VNC, or RDP mode.</p>
   </div>
 </body>
 </html>
@@ -1488,29 +1436,29 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
 <body>
   <div class="card">
     <h1>JRiver Media Center Dashboard</h1>
-    <p>Default runtime mode is <strong>Media Server</strong>. Launch the interactive UI only when needed for library setup and administration.</p>
+    <p>Choose one active runtime mode at a time: <strong>Media Server</strong>, <strong>VNC</strong>, or <strong>RDP</strong>.</p>
     <div class="actions">
-      <a href="/cgi-bin/jrmc-control.py?action=start-ui">Launch JRMC UI</a>
-      <a class="alt" href="/cgi-bin/jrmc-control.py?action=start-server">Return to Media Server</a>
-      <a class="alt" href="/cgi-bin/jrmc-control.py?action=stop-ui">Stop UI</a>
-      <a class="alt" href="/cgi-bin/jrmc-control.py?action=stop-server">Stop Media Server</a>
+      <a href="/cgi-bin/jrmc-control.py?action=switch-vnc">Switch to VNC</a>
+      <a class="alt" href="/cgi-bin/jrmc-control.py?action=switch-rdp">Switch to RDP</a>
+      <a class="alt" href="/cgi-bin/jrmc-control.py?action=switch-mediaserver">Switch to Media Server</a>
+      <a class="alt" href="/cgi-bin/jrmc-control.py?action=mode-status">Mode Status</a>
     </div>
   </div>
   <div class="card">
-    <h2>Interactive Session</h2>
-    <p>After launching the UI, open noVNC in the browser, enable native RDP for Remmina, or enable native VNC for TigerVNC-compatible desktop clients.</p>
+    <h2>VNC Mode</h2>
+    <p>VNC mode starts one shared JRMC desktop and exposes it through both browser noVNC and direct VNC automatically.</p>
     <div class="actions">
-      <a href="/novnc/vnc.html?autoconnect=1&resize=remote&path=/websockify">Open noVNC</a>
-      <a class="alt" href="/cgi-bin/jrmc-control.py?action=enable-direct-rdp">Enable Native RDP</a>
-      <a class="alt" href="/cgi-bin/jrmc-control.py?action=disable-direct-rdp">Disable Native RDP</a>
-      <a class="alt" href="/cgi-bin/jrmc-control.py?action=direct-rdp-status">Native RDP Status</a>
-      <a class="alt" href="/cgi-bin/jrmc-control.py?action=enable-direct-vnc">Enable Native VNC</a>
-      <a class="alt" href="/cgi-bin/jrmc-control.py?action=disable-direct-vnc">Disable Native VNC</a>
-      <a class="alt" href="/cgi-bin/jrmc-control.py?action=direct-vnc-status">Native VNC Status</a>
+      <a href="/novnc/vnc.html?autoconnect=1&resize=scale&path=/websockify">Open noVNC</a>
+      <a class="alt" href="/cgi-bin/jrmc-control.py?action=switch-vnc">Start VNC Mode</a>
+      <a class="alt" href="/cgi-bin/jrmc-control.py?action=mode-status">Mode Status</a>
     </div>
-    <p>Native RDP listens on port <code>3389</code> for Remmina and other RDP clients. Sign in with the same username and password used for Dashboard. Enabling native RDP stops Media Server and the shared noVNC/native VNC UI session so JRiver keeps one writable library owner.</p>
-    <p>Native VNC listens on port <code>5902</code>, uses <code>TLSPlain</code> with the same Dashboard username and password, and is only reachable while JRMC UI mode is active. Browser noVNC keeps the dedicated Xtigervnc backend, while TigerVNC-compatible native clients use a separate <code>x0vncserver</code> desktop-sharing backend.</p>
-    <p>Browser noVNC and native VNC share the same JRMC UI session. Native RDP uses a separate session and is mutually exclusive with that shared UI path.</p>
+    <p>Browser noVNC uses the shared VNC framebuffer through the web dashboard. Direct VNC listens on port <code>5902</code>, uses <code>TLSPlain</code>, and signs in with the same Dashboard username and password.</p>
+    <p>Both VNC transports always point to the same JRMC session. Switching to <strong>RDP</strong> or <strong>Media Server</strong> cleanly tears down VNC mode first.</p>
+  </div>
+  <div class="card">
+    <h2>RDP Mode</h2>
+    <p>RDP mode starts a separate xrdp session on port <code>3389</code> for Remmina and other RDP clients using the same Dashboard username and password.</p>
+    <p>Switching to RDP stops VNC and Media Server so JRiver keeps one writable library owner at a time.</p>
   </div>
   <div class="card">
     <h2>UI Scale</h2>
@@ -1531,8 +1479,8 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
         <a class="alt" href="/cgi-bin/jrmc-control.py?action=ui-scale-status">UI Scale Status</a>
       </div>
     </div>
-    <p>Scale presets persist for future noVNC, native VNC, and native RDP sessions. Running sessions pick up updated DPI and desktop-size hints best-effort.</p>
-    <p>For the sharpest result, prefer 100% / 1:1 client-side scaling in noVNC, TigerVNC, and Remmina when using a larger JRMC scale preset.</p>
+    <p>Scale presets persist for future VNC and RDP sessions. In VNC mode, larger presets request a larger server framebuffer so noVNC can scale it back down cleanly in the browser.</p>
+    <p>For the sharpest result, let noVNC fit the view automatically and prefer 100% / 1:1 client-side scaling in TigerVNC and Remmina when using a larger JRMC scale preset.</p>
   </div>
   <div class="card">
     <h2>Activation</h2>
@@ -1742,26 +1690,20 @@ echo "==================================="
 echo
 echo "Web setup URL:        https://<container-ip>:5800/setup/"
 echo "Default mode:         Media Server"
-echo "Interactive UI:       noVNC via Dashboard with remote desktop resize"
+echo "VNC mode:             Browser noVNC plus direct VNC on port 5902 at the same time"
 echo "UI Scale:             Presets 100/125/150/175/200 via Dashboard or jrmc-scale"
-echo "Native RDP:           Optional on port 3389 for Remmina using the same Dashboard username; stops Media Server and the shared UI when enabled"
-echo "Native VNC:           Optional on port 5902 with TLSPlain for TigerVNC while UI mode is active; shares the browser UI session and is unavailable while RDP is active"
+echo "RDP mode:             Port 3389 for Remmina using the same Dashboard username; switching modes tears down the others first"
 echo
 
 PS3="Select an option: "
 select opt in \
   "Set web credentials" \
-  "Start JRMC UI mode" \
-  "Return to Media Server mode" \
-  "Enable Native RDP" \
-  "Disable Native RDP" \
-  "Show Native RDP status" \
-  "Enable Native VNC" \
-  "Disable Native VNC" \
-  "Show Native VNC status" \
+  "Switch to VNC mode" \
+  "Switch to RDP mode" \
+  "Switch to Media Server mode" \
+  "Show current mode status" \
   "Set UI scale preset" \
   "Show UI scale status" \
-  "Show service status" \
   "Import .mjr activation file" \
   "Update JRiver Media Center" \
   "Exit"; do
@@ -1773,29 +1715,17 @@ select opt in \
     /usr/local/bin/jrmc-set-web-credentials "$user" "$pass"
     echo "Web credentials updated."
     ;;
-  "Start JRMC UI mode")
-    /usr/local/bin/jrmc-mode ui
+  "Switch to VNC mode")
+    /usr/local/bin/jrmc-mode vnc
     ;;
-  "Return to Media Server mode")
+  "Switch to RDP mode")
+    /usr/local/bin/jrmc-mode rdp
+    ;;
+  "Switch to Media Server mode")
     /usr/local/bin/jrmc-mode mediaserver
     ;;
-  "Enable Native RDP")
-    /usr/local/bin/jrmc-direct-rdp enable
-    ;;
-  "Disable Native RDP")
-    /usr/local/bin/jrmc-direct-rdp disable
-    ;;
-  "Show Native RDP status")
-    /usr/local/bin/jrmc-direct-rdp status
-    ;;
-  "Enable Native VNC")
-    /usr/local/bin/jrmc-direct-vnc enable
-    ;;
-  "Disable Native VNC")
-    /usr/local/bin/jrmc-direct-vnc disable
-    ;;
-  "Show Native VNC status")
-    /usr/local/bin/jrmc-direct-vnc status
+  "Show current mode status")
+    /usr/local/bin/jrmc-mode status
     ;;
   "Set UI scale preset")
     read -r -p "Choose UI scale preset (100, 125, 150, 175, 200): " scale
@@ -1803,9 +1733,6 @@ select opt in \
     ;;
   "Show UI scale status")
     /usr/local/bin/jrmc-scale status
-    ;;
-  "Show service status")
-    /usr/local/bin/jrmc-mode status
     ;;
   "Import .mjr activation file")
     read -r -p "Path to .mjr file: " mjr
