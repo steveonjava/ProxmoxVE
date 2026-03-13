@@ -63,6 +63,7 @@ msg_ok "Created Service User"
 msg_info "Preparing Runtime Directories"
 install -d -m 700 -o "${APP_USER}" -g "${APP_USER}" \
   "${APP_HOME}/.vnc" \
+  "${APP_HOME}/.cache" \
   "${APP_HOME}/.config" \
   "${RUNTIME_DIR}" \
   "${APP_HOME}/.config/tigervnc"
@@ -224,8 +225,8 @@ def build_profile(values: dict[str, str]) -> dict[str, float | int | str]:
 
     base_width = max(800, int_value(values, "JRMC_WIDTH", 1440))
     base_height = max(600, int_value(values, "JRMC_HEIGHT", 900))
-  width = max(640, math.floor((base_width * scale / 100) + 0.5))
-  height = max(480, math.floor((base_height * scale / 100) + 0.5))
+    width = max(640, math.floor((base_width * scale / 100) + 0.5))
+    height = max(480, math.floor((base_height * scale / 100) + 0.5))
     dpi = max(96, math.floor((96 * scale / 100) + 0.5))
     gdk_scale = 2 if scale >= 175 else 1
     gdk_dpi_scale = (scale / 100) / gdk_scale
@@ -398,6 +399,16 @@ apply_shared_display_now() {
   fi
 }
 
+restart_vnc_mode_if_active() {
+  local active_mode=""
+  active_mode="$(/usr/local/bin/jrmc-mode status 2>/dev/null | awk -F': ' '/^active-mode:/ {print $2; exit}')"
+  if [[ "${active_mode}" == "vnc" ]]; then
+    /usr/local/bin/jrmc-mode vnc >/dev/null
+    return 0
+  fi
+  return 1
+}
+
 print_status() {
   /usr/local/bin/jrmc-scale-profile summary
   echo "shared-ui: $(systemctl is-active jrmc-ui.service 2>/dev/null || true)"
@@ -414,16 +425,18 @@ case "${action}" in
     fi
     update_default JRMC_UI_SCALE "${scale}"
     source /etc/default/jrmc
-    apply_shared_display_now
-    echo "JRMC UI scale set to ${scale}%."
-    echo "Future noVNC, native VNC, and native RDP sessions will use the new preset."
-    if systemctl is-active --quiet jrmc-ui.service; then
-      echo "The current shared UI session will be updated best-effort within a few seconds."
+    if restart_vnc_mode_if_active; then
+      echo "JRMC UI scale set to ${scale}%."
+      echo "VNC mode was restarted so the new framebuffer size takes effect immediately for noVNC and direct VNC."
+    else
+      apply_shared_display_now
+      echo "JRMC UI scale set to ${scale}%."
     fi
+    echo "Future VNC and native RDP sessions will use the new preset."
     if systemctl is-active --quiet xrdp.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_RDP_PIDFILE}" >/dev/null 2>&1; then
       echo "Active RDP sessions receive updated DPI hints best-effort; reconnect if the client ignores them."
     fi
-    echo "For the sharpest result, keep client-side scaling at 100% / 1:1 when using high JRMC scale presets."
+    echo "For the sharpest result, let noVNC fit the larger framebuffer and keep client-side scaling at 100% / 1:1 in TigerVNC or Remmina when using high JRMC scale presets."
     ;;
   status)
     print_status
