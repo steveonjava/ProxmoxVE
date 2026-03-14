@@ -267,7 +267,6 @@ def emit_exports(profile: dict[str, float | int | str]) -> None:
     print(f'export GDK_SCALE="{profile["gdk_scale"]}"')
     print(f'export GDK_DPI_SCALE="{format_float(float(profile["gdk_dpi_scale"]))}"')
     print(f'export QT_SCALE_FACTOR="{format_float(float(profile["qt_scale_factor"]))}"')
-    print(f'export QT_FONT_DPI="{profile["dpi"]}"')
     print('export QT_AUTO_SCREEN_SCALE_FACTOR="0"')
     print('export QT_ENABLE_HIGHDPI_SCALING="1"')
     print('export QT_SCALE_FACTOR_ROUNDING_POLICY="RoundPreferFloor"')
@@ -294,39 +293,6 @@ def apply_session(values: dict[str, str], profile: dict[str, float | int | str])
         subprocess.run(["xrandr", "--size", geometry], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
     return 0
-
-
-def apply_xrdp_session(values: dict[str, str], profile: dict[str, float | int | str]) -> int:
-  env = os.environ.copy()
-  display = env.get("DISPLAY")
-  if not display:
-    return 0
-
-  env["DISPLAY"] = display
-  env["XAUTHORITY"] = env.get("XAUTHORITY") or f'{profile["home"]}/.Xauthority'
-
-  resources = (
-    f'Xft.dpi: {profile["dpi"]}\n'
-    f'Xcursor.size: {profile["cursor_size"]}\n'
-  )
-  subprocess.run(["xrdb", "-quiet", "-merge", "-"], input=resources, text=True, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-
-  # xorgxrdp rejects RANDR screen-size mutations on rdp0, so XRDP keeps the
-  # negotiated desktop resolution and relies on toolkit/X resource scaling hints.
-  gtk_dpi = int(profile["dpi"]) * 1024
-  cursor_size = int(profile["cursor_size"])
-  for gtk_version in ("3.0", "4.0"):
-    settings_dir = Path(profile["home"]) / ".config" / f"gtk-{gtk_version}"
-    settings_dir.mkdir(parents=True, exist_ok=True)
-    (settings_dir / "settings.ini").write_text(
-      "[Settings]\n"
-      f"gtk-xft-dpi={gtk_dpi}\n"
-      f"gtk-cursor-theme-size={cursor_size}\n"
-    )
-
-  return 0
-
-
 def print_summary(profile: dict[str, float | int | str]) -> None:
     print(f'ui-scale: {profile["scale"]}%')
     print(f'vnc-framebuffer: {profile["width"]}x{profile["height"]} (base {profile["base_width"]}x{profile["base_height"]})')
@@ -355,10 +321,8 @@ def main() -> int:
         return 0
     if action == "apply-session":
         return apply_session(values, profile)
-    if action == "apply-xrdp-session":
-      return apply_xrdp_session(values, profile)
 
-    print("Usage: jrmc-scale-profile {exports|size|geometry|summary|apply-session|apply-xrdp-session}", file=sys.stderr)
+    print("Usage: jrmc-scale-profile {exports|size|geometry|summary|apply-session}", file=sys.stderr)
     return 1
 
 
@@ -370,22 +334,11 @@ cat <<'EOF' >/usr/local/bin/jrmc-scale-watch
 #!/usr/bin/env bash
 set -euo pipefail
 
-target="${1:-shared}"
-
-case "${target}" in
-  shared) action="apply-session" ;;
-  xrdp) action="apply-xrdp-session" ;;
-  *)
-    echo "Usage: jrmc-scale-watch [shared|xrdp]" >&2
-    exit 1
-    ;;
-esac
-
 last_signature=""
 while true; do
   signature="$(grep -E '^(JRMC_UI_SCALE|JRMC_WIDTH|JRMC_HEIGHT)=' /etc/default/jrmc 2>/dev/null | tr '\n' '|')"
   if [[ "${signature}" != "${last_signature}" ]]; then
-    /usr/local/bin/jrmc-scale-profile "${action}" >/dev/null 2>&1 || true
+    /usr/local/bin/jrmc-scale-profile apply-session >/dev/null 2>&1 || true
     last_signature="${signature}"
   fi
   sleep 2
@@ -737,8 +690,6 @@ export USER="${JRMC_USER}"
 export DISPLAY="${DISPLAY:-:${JRMC_DISPLAY}}"
 export XAUTHORITY="${XAUTHORITY:-${JRMC_HOME}/.Xauthority}"
 
-eval "$(/usr/local/bin/jrmc-scale-profile exports)"
-
 service_is_busy() {
   local state
   state="$(systemctl show -p ActiveState --value "$1" 2>/dev/null || true)"
@@ -775,10 +726,6 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
-
-/usr/local/bin/jrmc-scale-profile apply-xrdp-session >/dev/null 2>&1 || true
-/usr/local/bin/jrmc-scale-watch xrdp >/dev/null 2>&1 &
-scale_watch_pid=$!
 
 nohup /usr/bin/openbox >/tmp/jrmc-openbox-rdp.log 2>&1 &
 openbox_pid=$!
