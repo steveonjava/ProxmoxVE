@@ -28,6 +28,15 @@ setting_up_container
 network_check
 update_os
 
+msg_custom "ℹ️" "${GN}" "If GPU passthrough is enabled, JRiver will install guest-side acceleration libraries and validation tools"
+setup_hwaccel
+
+if [[ "${ENABLE_GPU:-no}" == "yes" ]]; then
+  msg_info "Installing GPU Validation Tools"
+  $STD apt install -y ffmpeg pciutils >/dev/null 2>&1
+  msg_ok "Installed GPU Validation Tools"
+fi
+
 msg_info "Installing Dependencies"
 $STD apt install -y \
   apache2-utils \
@@ -85,6 +94,8 @@ JRMC_WIDTH="1440"
 JRMC_HEIGHT="900"
 JRMC_UI_SCALE="100"
 JRMC_MODE="mediaserver"
+JRMC_GPU_ENABLED="${ENABLE_GPU:-no}"
+JRMC_GPU_SELECTED_TYPE="${GPU_TYPE:-}"
 JRMC_REMOTE_AUDIO_ENABLED="0"
 JRMC_REMOTE_AUDIO_HOST=""
 JRMC_REMOTE_AUDIO_PORT="4713"
@@ -784,6 +795,199 @@ esac
 EOF
 chmod +x /usr/local/bin/jrmc-remote-audio
 
+cat <<'EOF' >/usr/local/bin/jrmc-gpu-status
+#!/usr/bin/env bash
+set -euo pipefail
+
+source /etc/default/jrmc
+
+join_lines() {
+  awk 'BEGIN { first = 1 } { if (!first) printf ","; printf "%s", $0; first = 0 } END { if (first) printf "" }'
+}
+
+first_render_node() {
+  if [[ -d /dev/dri ]]; then
+    find /dev/dri -maxdepth 1 -type c -name 'renderD*' | sort | head -n1
+  fi
+}
+
+compact_dri_nodes() {
+  if [[ -d /dev/dri ]]; then
+    find /dev/dri -maxdepth 1 -type c -printf '%f\n' | sort | join_lines
+  fi
+}
+
+compact_nvidia_nodes() {
+  find /dev -maxdepth 1 -type c \( -name 'nvidia*' -o -name 'nvidia-caps' \) -printf '%f\n' 2>/dev/null | sort | join_lines
+}
+
+have_command() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+safe_probe() {
+  local label="$1"
+  shift
+  local output
+  if output=$(timeout 20 "$@" 2>&1); then
+    output=$(printf '%s\n' "$output" | sed '/^$/d' | head -n1)
+    if [[ -n "$output" ]]; then
+      printf '%s: ok (%s)\n' "$label" "$output"
+    else
+      printf '%s: ok\n' "$label"
+    fi
+  else
+    output=$(printf '%s\n' "${output:-}" | sed '/^$/d' | head -n1)
+    if [[ -n "$output" ]]; then
+      printf '%s: failed (%s)\n' "$label" "$output"
+    else
+      printf '%s: failed\n' "$label"
+    fi
+  fi
+}
+
+render_node="$(first_render_node || true)"
+lspci_summary="unavailable"
+ffmpeg_hwaccels="unavailable"
+ffmpeg_encoders="unavailable"
+
+if have_command lspci; then
+  lspci_summary="$(lspci -nn | grep -Ei 'VGA|3D|Display' | join_lines)"
+  [[ -z "$lspci_summary" ]] && lspci_summary="none-detected"
+fi
+
+if have_command ffmpeg; then
+  ffmpeg_hwaccels="$(ffmpeg -hide_banner -hwaccels 2>/dev/null | awk 'NR > 1 {print $1}' | join_lines)"
+  ffmpeg_encoders="$(ffmpeg -hide_banner -encoders 2>/dev/null | awk '/_vaapi|_nvenc|_qsv/ {print $2}' | sort -u | join_lines)"
+  [[ -z "$ffmpeg_hwaccels" ]] && ffmpeg_hwaccels="none"
+  [[ -z "$ffmpeg_encoders" ]] && ffmpeg_encoders="none"
+fi
+
+echo "gpu-enabled: ${JRMC_GPU_ENABLED:-no}"
+echo "selected-gpu-type: ${JRMC_GPU_SELECTED_TYPE:-auto}"
+echo "service-user: ${JRMC_USER}"
+echo "service-user-groups: $(id -nG "${JRMC_USER}" 2>/dev/null | tr ' ' ',')"
+echo "render-group: $(getent group render | cut -d: -f1,3,4 2>/dev/null || echo unavailable)"
+echo "video-group: $(getent group video | cut -d: -f1,3,4 2>/dev/null || echo unavailable)"
+echo "lspci-gpus: ${lspci_summary}"
+echo "dri-render-node: ${render_node:-none}"
+echo "dri-nodes: $(compact_dri_nodes || true)"
+echo "nvidia-nodes: $(compact_nvidia_nodes || true)"
+echo "ffmpeg-present: $(have_command ffmpeg && echo yes || echo no)"
+echo "ffmpeg-hwaccels: ${ffmpeg_hwaccels}"
+echo "ffmpeg-hw-encoders: ${ffmpeg_encoders}"
+
+if have_command vainfo && [[ -n "${render_node:-}" ]]; then
+  safe_probe "vainfo" vainfo --display drm --device "${render_node}"
+else
+  echo "vainfo: unavailable"
+fi
+
+if have_command nvidia-smi; then
+  safe_probe "nvidia-smi" nvidia-smi --query-gpu=name,driver_version --format=csv,noheader
+else
+  echo "nvidia-smi: unavailable"
+fi
+EOF
+chmod +x /usr/local/bin/jrmc-gpu-status
+
+cat <<'EOF' >/usr/local/bin/jrmc-gpu-test
+#!/usr/bin/env bash
+set -euo pipefail
+
+source /etc/default/jrmc
+
+render_node=""
+if [[ -d /dev/dri ]]; then
+  render_node="$(find /dev/dri -maxdepth 1 -type c -name 'renderD*' | sort | head -n1)"
+fi
+
+failures=0
+
+pass() {
+  printf '[PASS] %s\n' "$1"
+}
+
+skip() {
+  printf '[SKIP] %s\n' "$1"
+}
+
+fail() {
+  printf '[FAIL] %s\n' "$1"
+  failures=$((failures + 1))
+}
+
+show_output() {
+  printf '%s\n' "$1" | sed '/^$/d' | head -n12
+}
+
+run_probe() {
+  local label="$1"
+  shift
+  local output
+  if output=$(timeout 30 "$@" 2>&1); then
+    pass "$label"
+    show_output "$output"
+  else
+    fail "$label"
+    show_output "${output:-}"
+  fi
+  echo
+}
+
+if [[ -n "${render_node}" || -e /dev/nvidiactl || -e /dev/kfd ]]; then
+  pass "GPU device nodes visible to container"
+else
+  fail "GPU device nodes visible to container"
+fi
+echo
+
+if command -v ffmpeg >/dev/null 2>&1; then
+  run_probe "FFmpeg reports hardware acceleration backends" ffmpeg -hide_banner -hwaccels
+else
+  skip "FFmpeg not installed"
+  echo
+fi
+
+if command -v vainfo >/dev/null 2>&1 && [[ -n "${render_node}" ]]; then
+  run_probe "VA-API driver probe" vainfo --display drm --device "${render_node}"
+else
+  skip "VA-API probe unavailable"
+  echo
+fi
+
+if command -v ffmpeg >/dev/null 2>&1 && [[ -n "${render_node}" ]] && ffmpeg -hide_banner -encoders 2>/dev/null | awk '{print $2}' | grep -qx 'h264_vaapi'; then
+  run_probe "FFmpeg VA-API encode" \
+    ffmpeg -v error -vaapi_device "${render_node}" -f lavfi -i testsrc2=size=128x72:rate=1 -frames:v 1 -vf format=nv12,hwupload -c:v h264_vaapi -f null -
+else
+  skip "FFmpeg VA-API encode unavailable"
+  echo
+fi
+
+if command -v nvidia-smi >/dev/null 2>&1; then
+  run_probe "NVIDIA driver probe" nvidia-smi
+else
+  skip "NVIDIA driver probe unavailable"
+  echo
+fi
+
+if command -v ffmpeg >/dev/null 2>&1 && ffmpeg -hide_banner -encoders 2>/dev/null | awk '{print $2}' | grep -qx 'h264_nvenc'; then
+  run_probe "FFmpeg NVENC encode" \
+    ffmpeg -v error -f lavfi -i testsrc2=size=128x72:rate=1 -frames:v 1 -c:v h264_nvenc -f null -
+else
+  skip "FFmpeg NVENC encode unavailable"
+  echo
+fi
+
+if (( failures > 0 )); then
+  echo "GPU validation completed with ${failures} failure(s)."
+  exit 1
+fi
+
+echo "GPU validation completed without failures."
+EOF
+chmod +x /usr/local/bin/jrmc-gpu-test
+
 cat <<'EOF' >/usr/local/bin/jrmc-window-fit
 #!/usr/bin/env bash
 set -euo pipefail
@@ -1409,6 +1613,7 @@ VNC mode: browser noVNC and direct VNC on port ${JRMC_NATIVE_VNC_PORT} run toget
 RDP mode: native RDP on port ${JRMC_NATIVE_RDP_PORT} for Remmina using the same username and password as Dashboard.
 UI Scale: set 100%-200% presets from Dashboard or jrmc-scale; active sessions update best-effort.
 Remote audio: optionally point JRMC at a trusted-LAN PipeWire Pulse endpoint from Dashboard or jrmc-remote-audio.
+GPU passthrough: if enabled during install, validate device visibility and FFmpeg acceleration with jrmc-gpu-status and jrmc-gpu-test.
 CREDS
 
 systemctl reload nginx
@@ -1559,6 +1764,8 @@ case "${mode}" in
     echo "jrmc-native-vnc: $(systemctl is-active jrmc-native-vnc.service 2>/dev/null || true)"
     echo "xrdp: $(systemctl is-active xrdp.service 2>/dev/null || true)"
     echo "ui-scale: ${JRMC_UI_SCALE:-100}%"
+    echo "gpu-enabled: ${JRMC_GPU_ENABLED:-no}"
+    echo "gpu-selected-type: ${JRMC_GPU_SELECTED_TYPE:-auto}"
     echo "remote-audio-enabled: ${JRMC_REMOTE_AUDIO_ENABLED:-0}"
     echo "remote-audio-host: ${JRMC_REMOTE_AUDIO_HOST:-}"
     echo "remote-audio-port: ${JRMC_REMOTE_AUDIO_PORT:-4713}"
@@ -1738,6 +1945,8 @@ mapping = {
   "disable-direct-vnc": ["sudo", "/usr/local/bin/jrmc-mode", "mediaserver"],
   "direct-vnc-status": ["sudo", "/usr/local/bin/jrmc-mode", "status"],
   "ui-scale-status": ["sudo", "/usr/local/bin/jrmc-scale", "status"],
+  "gpu-status": ["sudo", "/usr/local/bin/jrmc-gpu-status"],
+  "gpu-test": ["sudo", "/usr/local/bin/jrmc-gpu-test"],
   "disable-remote-audio": ["sudo", "/usr/local/bin/jrmc-remote-audio", "disable"],
   "remote-audio-status": ["sudo", "/usr/local/bin/jrmc-remote-audio", "status"],
 }
@@ -1901,6 +2110,16 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
     <p>After enabling or changing the target, switch JRMC modes or reconnect the current session so the player relaunches against the new audio endpoint.</p>
   </div>
   <div class="card">
+    <h2>GPU Passthrough</h2>
+    <div class="actions">
+      <a class="alt" href="/cgi-bin/jrmc-control.py?action=gpu-status">GPU Status</a>
+      <a class="alt" href="/cgi-bin/jrmc-control.py?action=gpu-test">Run GPU Validation</a>
+    </div>
+    <p>If GPU passthrough was enabled during installation, the container should expose either <code>/dev/dri/renderD*</code> or <code>/dev/nvidia*</code> devices to JRiver and FFmpeg.</p>
+    <p><code>jrmc-gpu-status</code> summarizes visible GPU nodes, service-user group membership, and detected FFmpeg hardware backends. <code>jrmc-gpu-test</code> runs command-line validation with <code>vainfo</code>, <code>nvidia-smi</code>, and a tiny FFmpeg hardware encode where supported.</p>
+    <p>JRiver on Linux relies on the guest VA-API or NVIDIA stack provided by the container. Validate here first, then do interactive playback checks from VNC or RDP mode for app-level confirmation.</p>
+  </div>
+  <div class="card">
     <h2>Activation</h2>
     <p>Import a <code>.mjr</code> license file from inside the container with <code>jrmc-activate /path/to/file.mjr</code>.</p>
     <p>Local admin helper: <code>jrmc-configure</code></p>
@@ -1997,7 +2216,7 @@ PY
 systemctl disable --now xrdp.service xrdp-sesman.service >/dev/null 2>&1 || true
 
 cat <<'EOF' >/etc/sudoers.d/jrmc-web
-www-data ALL=(root) NOPASSWD: /usr/local/bin/jrmc-mode, /usr/local/bin/jrmc-direct-rdp, /usr/local/bin/jrmc-direct-vnc, /usr/local/bin/jrmc-scale, /usr/local/bin/jrmc-remote-audio, /usr/local/bin/jrmc-set-web-credentials
+www-data ALL=(root) NOPASSWD: /usr/local/bin/jrmc-mode, /usr/local/bin/jrmc-direct-rdp, /usr/local/bin/jrmc-direct-vnc, /usr/local/bin/jrmc-scale, /usr/local/bin/jrmc-remote-audio, /usr/local/bin/jrmc-gpu-status, /usr/local/bin/jrmc-gpu-test, /usr/local/bin/jrmc-set-web-credentials
 EOF
 chmod 0440 /etc/sudoers.d/jrmc-web
 
@@ -2111,6 +2330,7 @@ echo "Default mode:         Media Server"
 echo "VNC mode:             Browser noVNC plus direct VNC on port 5902 at the same time"
 echo "UI Scale:             Presets 100/125/150/175/200 via Dashboard or jrmc-scale"
 echo "RDP mode:             Port 3389 for Remmina using the same Dashboard username; switching modes tears down the others first"
+echo "GPU passthrough:      Validate with jrmc-gpu-status and jrmc-gpu-test when enabled at install time"
 echo
 
 PS3="Select an option: "
@@ -2122,6 +2342,8 @@ select opt in \
   "Show current mode status" \
   "Set UI scale preset" \
   "Show UI scale status" \
+  "Show GPU status" \
+  "Run GPU validation" \
   "Import .mjr activation file" \
   "Update JRiver Media Center" \
   "Exit"; do
@@ -2151,6 +2373,12 @@ select opt in \
     ;;
   "Show UI scale status")
     /usr/local/bin/jrmc-scale status
+    ;;
+  "Show GPU status")
+    /usr/local/bin/jrmc-gpu-status
+    ;;
+  "Run GPU validation")
+    /usr/local/bin/jrmc-gpu-test
     ;;
   "Import .mjr activation file")
     read -r -p "Path to .mjr file: " mjr
