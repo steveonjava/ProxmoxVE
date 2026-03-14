@@ -108,6 +108,47 @@ JRMC_NATIVE_VNC_PEM="${CONFIG_DIR}/native-vnc-server.pem"
 JRMC_NATIVE_VNC_LOG="/tmp/jrmc-native-vnc.log"
 EOF
 chmod 0644 /etc/default/jrmc
+
+cat <<'EOF' >/etc/asound.conf
+pcm.jrmc_remote {
+  type plug
+  slave.pcm "pulse"
+}
+
+ctl.jrmc_remote {
+  type pulse
+}
+
+pcm.!default {
+  @func refer
+  name {
+    @func concat
+    strings [
+      "pcm."
+      {
+        @func getenv
+        vars [ ALSA_DEFAULT_PCM ]
+        default "null"
+      }
+    ]
+  }
+}
+
+ctl.!default {
+  @func refer
+  name {
+    @func concat
+    strings [
+      "ctl."
+      {
+        @func getenv
+        vars [ ALSA_DEFAULT_CTL ALSA_DEFAULT_PCM ]
+        default "jrmc_remote"
+      }
+    ]
+  }
+}
+EOF
 msg_ok "Prepared Runtime Directories"
 
 msg_info "Downloading installJRMC"
@@ -612,6 +653,8 @@ CONF
 
 emit_env() {
   if [[ "${JRMC_REMOTE_AUDIO_ENABLED:-0}" == "1" && -n "${JRMC_REMOTE_AUDIO_HOST:-}" ]]; then
+    printf 'export ALSA_DEFAULT_PCM=%q\n' "jrmc_remote"
+    printf 'export ALSA_DEFAULT_CTL=%q\n' "jrmc_remote"
     printf 'export PULSE_SERVER=%q\n' "tcp:${JRMC_REMOTE_AUDIO_HOST}:${JRMC_REMOTE_AUDIO_PORT:-4713}"
     if [[ -n "${JRMC_REMOTE_AUDIO_SINK:-}" ]]; then
       printf 'export PULSE_SINK=%q\n' "${JRMC_REMOTE_AUDIO_SINK}"
@@ -1762,8 +1805,8 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
         <a class="alt" href="/cgi-bin/jrmc-control.py?action=remote-audio-status">Remote Audio Status</a>
       </div>
     </div>
-    <p>JRMC can send audio to a trusted-LAN Linux host running PipeWire with local ALSA speakers. When enabled, the active JRMC mode exports <code>PULSE_SERVER=tcp:host:port</code> and optionally <code>PULSE_SINK</code> before the player launches.</p>
-    <p>After restarting JRMC, select the ALSA output named <code>pulse</code> inside JRiver if it is not already chosen.</p>
+    <p>JRMC can send audio to a trusted-LAN Linux host running PipeWire with local ALSA speakers. When enabled, the active JRMC mode exports <code>ALSA_DEFAULT_PCM=jrmc_remote</code>, <code>PULSE_SERVER=tcp:host:port</code>, and optionally <code>PULSE_SINK</code> before the player launches.</p>
+    <p>After restarting JRMC, look for the ALSA output named <code>jrmc_remote</code> first. If JRiver does not pick it automatically, select it manually.</p>
     <p>Remote host setup: install PipeWire with the Pulse compatibility daemon, then configure <code>~/.config/pipewire/pipewire-pulse.conf.d/jrmc-network.conf</code> with <code>pulse.properties = { server.address = [ "unix:native" "tcp:4713" ] }</code>. Restart the user services with <code>systemctl --user restart pipewire pipewire-pulse</code>, confirm the chosen sink name with <code>pactl list short sinks</code>, and keep the listener restricted to a trusted LAN.</p>
     <p>After enabling or changing the target, switch JRMC modes or reconnect the current session so the player relaunches against the new audio endpoint.</p>
   </div>
