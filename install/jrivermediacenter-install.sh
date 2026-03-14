@@ -267,6 +267,7 @@ def emit_exports(profile: dict[str, float | int | str]) -> None:
     print(f'export GDK_SCALE="{profile["gdk_scale"]}"')
     print(f'export GDK_DPI_SCALE="{format_float(float(profile["gdk_dpi_scale"]))}"')
     print(f'export QT_SCALE_FACTOR="{format_float(float(profile["qt_scale_factor"]))}"')
+    print(f'export QT_FONT_DPI="{profile["dpi"]}"')
     print('export QT_AUTO_SCREEN_SCALE_FACTOR="0"')
     print('export QT_ENABLE_HIGHDPI_SCALING="1"')
     print('export QT_SCALE_FACTOR_ROUNDING_POLICY="RoundPreferFloor"')
@@ -295,48 +296,6 @@ def apply_session(values: dict[str, str], profile: dict[str, float | int | str])
     return 0
 
 
-def current_xrandr_mode(env: dict[str, str]) -> tuple[int, int] | None:
-  result = subprocess.run(
-    ["xrandr", "--current"],
-    env=env,
-    capture_output=True,
-    text=True,
-    check=False,
-  )
-  if result.returncode != 0:
-    return None
-
-  for line in result.stdout.splitlines():
-    if " connected" not in line:
-      continue
-    match = re.search(r" connected(?: primary)? (\d+)x(\d+)\+\d+\+\d+", line)
-    if match:
-      return int(match.group(1)), int(match.group(2))
-
-  return None
-
-
-def connected_outputs(env: dict[str, str]) -> list[str]:
-  result = subprocess.run(
-    ["xrandr", "--current"],
-    env=env,
-    capture_output=True,
-    text=True,
-    check=False,
-  )
-  if result.returncode != 0:
-    return []
-
-  outputs: list[str] = []
-  for line in result.stdout.splitlines():
-    if " connected" not in line:
-      continue
-    output = line.split()[0].strip()
-    if output:
-      outputs.append(output)
-  return outputs
-
-
 def apply_xrdp_session(values: dict[str, str], profile: dict[str, float | int | str]) -> int:
   env = os.environ.copy()
   display = env.get("DISPLAY")
@@ -351,23 +310,19 @@ def apply_xrdp_session(values: dict[str, str], profile: dict[str, float | int | 
     f'Xcursor.size: {profile["cursor_size"]}\n'
   )
   subprocess.run(["xrdb", "-quiet", "-merge", "-"], input=resources, text=True, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-  subprocess.run(["xrandr", "--dpi", str(profile["dpi"])], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
-  current_mode = current_xrandr_mode(env)
-  if current_mode is None:
-    return 0
-
-  current_width, current_height = current_mode
-  scaled_width = max(current_width, math.floor((current_width * int(profile["scale"]) / 100) + 0.5))
-  scaled_height = max(current_height, math.floor((current_height * int(profile["scale"]) / 100) + 0.5))
-  fbmm_width = max(120, math.floor((scaled_width * 25.4 / int(profile["dpi"])) + 0.5))
-  fbmm_height = max(90, math.floor((scaled_height * 25.4 / int(profile["dpi"])) + 0.5))
-
-  subprocess.run(["xrandr", "--fbmm", f"{fbmm_width}x{fbmm_height}"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-  subprocess.run(["xrandr", "--fb", f"{scaled_width}x{scaled_height}"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-
-  for output in connected_outputs(env):
-    subprocess.run(["xrandr", "--output", output, "--scale-from", f"{scaled_width}x{scaled_height}"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+  # xorgxrdp rejects RANDR screen-size mutations on rdp0, so XRDP keeps the
+  # negotiated desktop resolution and relies on toolkit/X resource scaling hints.
+  gtk_dpi = int(profile["dpi"]) * 1024
+  cursor_size = int(profile["cursor_size"])
+  for gtk_version in ("3.0", "4.0"):
+    settings_dir = Path(profile["home"]) / ".config" / f"gtk-{gtk_version}"
+    settings_dir.mkdir(parents=True, exist_ok=True)
+    (settings_dir / "settings.ini").write_text(
+      "[Settings]\n"
+      f"gtk-xft-dpi={gtk_dpi}\n"
+      f"gtk-cursor-theme-size={cursor_size}\n"
+    )
 
   return 0
 
