@@ -82,6 +82,10 @@ JRMC_WIDTH="1440"
 JRMC_HEIGHT="900"
 JRMC_UI_SCALE="100"
 JRMC_MODE="mediaserver"
+JRMC_REMOTE_AUDIO_ENABLED="0"
+JRMC_REMOTE_AUDIO_HOST=""
+JRMC_REMOTE_AUDIO_PORT="4713"
+JRMC_REMOTE_AUDIO_SINK=""
 JRMC_WEB_HTPASSWD="/etc/nginx/jrmc.htpasswd"
 JRMC_VNC_HTPASSWD="${CONFIG_DIR}/native-vnc.htpasswd"
 JRMC_BOOTSTRAP_FILE="${CONFIG_DIR}/bootstrap-complete"
@@ -553,6 +557,122 @@ esac
 EOF
 chmod +x /usr/local/bin/jrmc-scale
 
+cat <<'EOF' >/usr/local/bin/jrmc-remote-audio
+#!/usr/bin/env bash
+set -euo pipefail
+
+source /etc/default/jrmc
+
+action="${1:-status}"
+
+update_default() {
+  local key="$1"
+  local value="$2"
+  python3 - "$key" "$value" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path('/etc/default/jrmc')
+key = sys.argv[1]
+value = sys.argv[2]
+lines = path.read_text().splitlines()
+new_lines = []
+found = False
+for line in lines:
+    if line.startswith(f"{key}="):
+        new_lines.append(f'{key}="{value}"')
+        found = True
+    else:
+        new_lines.append(line)
+if not found:
+    new_lines.append(f'{key}="{value}"')
+path.write_text("\n".join(new_lines) + "\n")
+PY
+}
+
+write_client_conf() {
+  install -d -m 700 -o "${JRMC_USER}" -g "${JRMC_USER}" "${JRMC_HOME}/.config/pulse"
+
+  if [[ "${JRMC_REMOTE_AUDIO_ENABLED:-0}" == "1" && -n "${JRMC_REMOTE_AUDIO_HOST:-}" ]]; then
+    cat <<CONF >"${JRMC_HOME}/.config/pulse/client.conf"
+default-server = tcp:${JRMC_REMOTE_AUDIO_HOST}:${JRMC_REMOTE_AUDIO_PORT:-4713}
+autospawn = no
+enable-shm = false
+CONF
+  else
+    rm -f "${JRMC_HOME}/.config/pulse/client.conf"
+  fi
+
+  chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_HOME}/.config/pulse" >/dev/null 2>&1 || true
+  [[ -f "${JRMC_HOME}/.config/pulse/client.conf" ]] && chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_HOME}/.config/pulse/client.conf"
+}
+
+emit_env() {
+  if [[ "${JRMC_REMOTE_AUDIO_ENABLED:-0}" == "1" && -n "${JRMC_REMOTE_AUDIO_HOST:-}" ]]; then
+    printf 'export PULSE_SERVER=%q\n' "tcp:${JRMC_REMOTE_AUDIO_HOST}:${JRMC_REMOTE_AUDIO_PORT:-4713}"
+    if [[ -n "${JRMC_REMOTE_AUDIO_SINK:-}" ]]; then
+      printf 'export PULSE_SINK=%q\n' "${JRMC_REMOTE_AUDIO_SINK}"
+    fi
+  fi
+}
+
+print_status() {
+  echo "remote-audio-enabled: ${JRMC_REMOTE_AUDIO_ENABLED:-0}"
+  echo "remote-audio-host: ${JRMC_REMOTE_AUDIO_HOST:-}"
+  echo "remote-audio-port: ${JRMC_REMOTE_AUDIO_PORT:-4713}"
+  echo "remote-audio-sink: ${JRMC_REMOTE_AUDIO_SINK:-}"
+  if [[ "${JRMC_REMOTE_AUDIO_ENABLED:-0}" == "1" && -n "${JRMC_REMOTE_AUDIO_HOST:-}" ]]; then
+    echo "pulse-server: tcp:${JRMC_REMOTE_AUDIO_HOST}:${JRMC_REMOTE_AUDIO_PORT:-4713}"
+  else
+    echo "pulse-server: disabled"
+  fi
+}
+
+case "${action}" in
+  enable)
+    host="${2:-}"
+    port="${3:-4713}"
+    sink="${4:-}"
+    if [[ -z "${host}" ]]; then
+      echo "Usage: jrmc-remote-audio enable <host> [port] [sink]" >&2
+      exit 1
+    fi
+    if ! [[ "${port}" =~ ^[0-9]{1,5}$ ]] || (( port < 1 || port > 65535 )); then
+      echo "Port must be between 1 and 65535." >&2
+      exit 1
+    fi
+    update_default JRMC_REMOTE_AUDIO_ENABLED 1
+    update_default JRMC_REMOTE_AUDIO_HOST "${host}"
+    update_default JRMC_REMOTE_AUDIO_PORT "${port}"
+    update_default JRMC_REMOTE_AUDIO_SINK "${sink}"
+    source /etc/default/jrmc
+    write_client_conf
+    echo "Remote audio enabled: tcp:${JRMC_REMOTE_AUDIO_HOST}:${JRMC_REMOTE_AUDIO_PORT}"
+    if [[ -n "${JRMC_REMOTE_AUDIO_SINK:-}" ]]; then
+      echo "Preferred sink: ${JRMC_REMOTE_AUDIO_SINK}"
+    fi
+    echo "Restart the active JRMC mode so the player reconnects with the new Pulse endpoint."
+    ;;
+  disable)
+    update_default JRMC_REMOTE_AUDIO_ENABLED 0
+    source /etc/default/jrmc
+    write_client_conf
+    echo "Remote audio disabled."
+    ;;
+  emit-env)
+    emit_env
+    ;;
+  status)
+    print_status
+    ;;
+  *)
+    echo "Usage: jrmc-remote-audio {enable <host> [port] [sink]|disable|status|emit-env}" >&2
+    exit 1
+    ;;
+esac
+EOF
+chmod +x /usr/local/bin/jrmc-remote-audio
+
 cat <<'EOF' >/usr/local/bin/jrmc-window-fit
 #!/usr/bin/env bash
 set -euo pipefail
@@ -791,6 +911,7 @@ export HOME="${JRMC_HOME}"
 export USER="${JRMC_USER}"
 export DISPLAY="${DISPLAY:-:${JRMC_DISPLAY}}"
 export XAUTHORITY="${XAUTHORITY:-${JRMC_HOME}/.Xauthority}"
+eval "$(/usr/local/bin/jrmc-remote-audio emit-env)"
 
 service_is_busy() {
   local state
@@ -860,6 +981,7 @@ export DISPLAY=":${JRMC_DISPLAY}"
 export XAUTHORITY="${JRMC_HOME}/.Xauthority"
 
 eval "$(/usr/local/bin/jrmc-scale-profile exports)"
+eval "$(/usr/local/bin/jrmc-remote-audio emit-env)"
 
 service_is_busy() {
   local state
@@ -907,6 +1029,7 @@ source /etc/default/jrmc
 export HOME="${JRMC_HOME}"
 export USER="${JRMC_USER}"
 export DISPLAY=":${JRMC_DISPLAY}"
+eval "$(/usr/local/bin/jrmc-remote-audio emit-env)"
 
 for _i in $(seq 1 30); do
   xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1 && break
@@ -1163,6 +1286,7 @@ Modes: choose Media Server, VNC, or RDP from Dashboard or jrmc-mode.
 VNC mode: browser noVNC and direct VNC on port ${JRMC_NATIVE_VNC_PORT} run together against the same JRMC session using the Dashboard username and password.
 RDP mode: native RDP on port ${JRMC_NATIVE_RDP_PORT} for Remmina using the same username and password as Dashboard.
 UI Scale: set 100%-200% presets from Dashboard or jrmc-scale; active sessions update best-effort.
+Remote audio: optionally point JRMC at a trusted-LAN PipeWire Pulse endpoint from Dashboard or jrmc-remote-audio.
 CREDS
 
 systemctl reload nginx
@@ -1291,6 +1415,10 @@ case "${mode}" in
     echo "jrmc-native-vnc: $(systemctl is-active jrmc-native-vnc.service 2>/dev/null || true)"
     echo "xrdp: $(systemctl is-active xrdp.service 2>/dev/null || true)"
     echo "ui-scale: ${JRMC_UI_SCALE:-100}%"
+    echo "remote-audio-enabled: ${JRMC_REMOTE_AUDIO_ENABLED:-0}"
+    echo "remote-audio-host: ${JRMC_REMOTE_AUDIO_HOST:-}"
+    echo "remote-audio-port: ${JRMC_REMOTE_AUDIO_PORT:-4713}"
+    echo "remote-audio-sink: ${JRMC_REMOTE_AUDIO_SINK:-}"
     if [[ "${active_mode}" == "vnc" ]]; then
       echo "novnc: https://$(hostname -I | awk '{print $1}'):${JRMC_WEB_PORT}/novnc/vnc.html?autoconnect=1&resize=scale&path=/websockify"
       echo "direct-vnc: $(hostname -I | awk '{print $1}'):${JRMC_NATIVE_VNC_PORT}"
@@ -1446,6 +1574,9 @@ def read_params() -> dict[str, list[str]]:
 params = read_params()
 action = params.get("action", [""])[0]
 scale = params.get("ui_scale", [""])[0].strip()
+remote_audio_host = params.get("remote_audio_host", [""])[0].strip()
+remote_audio_port = params.get("remote_audio_port", [""])[0].strip()
+remote_audio_sink = params.get("remote_audio_sink", [""])[0].strip()
 
 mapping = {
   "switch-vnc": ["sudo", "/usr/local/bin/jrmc-mode", "vnc"],
@@ -1462,7 +1593,9 @@ mapping = {
   "enable-direct-vnc": ["sudo", "/usr/local/bin/jrmc-mode", "vnc"],
   "disable-direct-vnc": ["sudo", "/usr/local/bin/jrmc-mode", "mediaserver"],
   "direct-vnc-status": ["sudo", "/usr/local/bin/jrmc-mode", "status"],
-    "ui-scale-status": ["sudo", "/usr/local/bin/jrmc-scale", "status"],
+  "ui-scale-status": ["sudo", "/usr/local/bin/jrmc-scale", "status"],
+  "disable-remote-audio": ["sudo", "/usr/local/bin/jrmc-remote-audio", "disable"],
+  "remote-audio-status": ["sudo", "/usr/local/bin/jrmc-remote-audio", "status"],
 }
 
 print("Content-Type: text/html")
@@ -1473,6 +1606,14 @@ if action == "set-ui-scale":
     print("<html><body><h1>Invalid scale preset</h1><p><a href='/dashboard/'>Back</a></p></body></html>")
     raise SystemExit(0)
   command = ["sudo", "/usr/local/bin/jrmc-scale", "set", scale]
+elif action == "enable-remote-audio":
+  if not remote_audio_host:
+    print("<html><body><h1>Remote audio host is required</h1><p><a href='/dashboard/'>Back</a></p></body></html>")
+    raise SystemExit(0)
+  port = remote_audio_port or "4713"
+  command = ["sudo", "/usr/local/bin/jrmc-remote-audio", "enable", remote_audio_host, port]
+  if remote_audio_sink:
+    command.append(remote_audio_sink)
 elif action in mapping:
   command = mapping[action]
 else:
@@ -1538,7 +1679,7 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
     .stack{display:grid;gap:.75rem}
     .scale-form{display:grid;gap:.75rem;max-width:420px}
     label{font-weight:600}
-    select{width:100%;padding:.8rem;border-radius:8px;border:1px solid #475569;background:#020617;color:#e2e8f0}
+    input,select{width:100%;padding:.8rem;border-radius:8px;border:1px solid #475569;background:#020617;color:#e2e8f0}
     code{background:#020617;padding:.15rem .35rem;border-radius:4px}
   </style>
 </head>
@@ -1591,6 +1732,28 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
     <p>Scale presets persist for future VNC and RDP sessions. In VNC mode, larger presets request a larger server framebuffer so noVNC can scale it back down cleanly in the browser while JRiver keeps its own internal Standard View size at 1.</p>
     <p>In RDP mode, the same presets are translated into JRiver's internal Standard View size before the app launches, so 100% maps to 1, 125% to 1.25, 150% to 1.5, 175% to 1.75, and 200% to 2.</p>
     <p>For the sharpest result, let noVNC fit the view automatically and prefer 100% / 1:1 client-side scaling in TigerVNC and Remmina when using a larger JRMC scale preset.</p>
+  </div>
+  <div class="card">
+    <h2>Remote Audio</h2>
+    <div class="stack">
+      <form class="scale-form" method="post" action="/cgi-bin/jrmc-control.py">
+        <input type="hidden" name="action" value="enable-remote-audio">
+        <label for="remote_audio_host">PipeWire host or IP</label>
+        <input id="remote_audio_host" name="remote_audio_host" placeholder="192.168.1.50" required>
+        <label for="remote_audio_port">Pulse TCP port</label>
+        <input id="remote_audio_port" name="remote_audio_port" value="4713" inputmode="numeric">
+        <label for="remote_audio_sink">Optional sink name</label>
+        <input id="remote_audio_sink" name="remote_audio_sink" placeholder="alsa_output.pci-0000_00_1f.3.analog-stereo">
+        <button type="submit">Enable Remote Audio</button>
+      </form>
+      <div class="actions">
+        <a class="alt" href="/cgi-bin/jrmc-control.py?action=disable-remote-audio">Disable Remote Audio</a>
+        <a class="alt" href="/cgi-bin/jrmc-control.py?action=remote-audio-status">Remote Audio Status</a>
+      </div>
+    </div>
+    <p>JRMC can send audio to a trusted-LAN Linux host running PipeWire with local ALSA speakers. When enabled, the active JRMC mode exports <code>PULSE_SERVER=tcp:host:port</code> and optionally <code>PULSE_SINK</code> before the player launches.</p>
+    <p>Remote host setup: install PipeWire with the Pulse compatibility daemon, then configure <code>~/.config/pipewire/pipewire-pulse.conf.d/jrmc-network.conf</code> with <code>pulse.properties = { server.address = [ "unix:native" "tcp:4713" ] }</code>. Restart the user services with <code>systemctl --user restart pipewire pipewire-pulse</code>, confirm the chosen sink name with <code>pactl list short sinks</code>, and keep the listener restricted to a trusted LAN.</p>
+    <p>After enabling or changing the target, switch JRMC modes or reconnect the current session so the player relaunches against the new audio endpoint.</p>
   </div>
   <div class="card">
     <h2>Activation</h2>
@@ -1689,7 +1852,7 @@ PY
 systemctl disable --now xrdp.service xrdp-sesman.service >/dev/null 2>&1 || true
 
 cat <<'EOF' >/etc/sudoers.d/jrmc-web
-www-data ALL=(root) NOPASSWD: /usr/local/bin/jrmc-mode, /usr/local/bin/jrmc-direct-rdp, /usr/local/bin/jrmc-direct-vnc, /usr/local/bin/jrmc-scale, /usr/local/bin/jrmc-set-web-credentials
+www-data ALL=(root) NOPASSWD: /usr/local/bin/jrmc-mode, /usr/local/bin/jrmc-direct-rdp, /usr/local/bin/jrmc-direct-vnc, /usr/local/bin/jrmc-scale, /usr/local/bin/jrmc-remote-audio, /usr/local/bin/jrmc-set-web-credentials
 EOF
 chmod 0440 /etc/sudoers.d/jrmc-web
 

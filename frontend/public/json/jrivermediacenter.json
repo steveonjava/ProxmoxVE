@@ -61,6 +61,14 @@
       "type": "info"
     },
     {
+      "text": "Dashboard can also route JRiver audio to a trusted-LAN Linux PipeWire host by targeting its pipewire-pulse TCP listener. Provide the host/IP, optional port, and optional sink name from the Dashboard Remote Audio card.",
+      "type": "info"
+    },
+    {
+      "text": "Remote host setup requires PipeWire plus pipewire-pulse listening on a trusted LAN address such as tcp:4713, then choosing a playback sink from `pactl list short sinks`.",
+      "type": "info"
+    },
+    {
       "text": "Run `jrmc-configure` for local administration, `jrmc-mode` to switch between Media Server and UI modes, and `jrmc-activate /path/to/file.mjr` to import a license restore file.",
       "type": "info"
     },
