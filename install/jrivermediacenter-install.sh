@@ -295,6 +295,83 @@ def apply_session(values: dict[str, str], profile: dict[str, float | int | str])
     return 0
 
 
+def current_xrandr_mode(env: dict[str, str]) -> tuple[int, int] | None:
+  result = subprocess.run(
+    ["xrandr", "--current"],
+    env=env,
+    capture_output=True,
+    text=True,
+    check=False,
+  )
+  if result.returncode != 0:
+    return None
+
+  for line in result.stdout.splitlines():
+    if " connected" not in line:
+      continue
+    match = re.search(r" connected(?: primary)? (\d+)x(\d+)\+\d+\+\d+", line)
+    if match:
+      return int(match.group(1)), int(match.group(2))
+
+  return None
+
+
+def connected_outputs(env: dict[str, str]) -> list[str]:
+  result = subprocess.run(
+    ["xrandr", "--current"],
+    env=env,
+    capture_output=True,
+    text=True,
+    check=False,
+  )
+  if result.returncode != 0:
+    return []
+
+  outputs: list[str] = []
+  for line in result.stdout.splitlines():
+    if " connected" not in line:
+      continue
+    output = line.split()[0].strip()
+    if output:
+      outputs.append(output)
+  return outputs
+
+
+def apply_xrdp_session(values: dict[str, str], profile: dict[str, float | int | str]) -> int:
+  env = os.environ.copy()
+  display = env.get("DISPLAY")
+  if not display:
+    return 0
+
+  env["DISPLAY"] = display
+  env["XAUTHORITY"] = env.get("XAUTHORITY") or f'{profile["home"]}/.Xauthority'
+
+  resources = (
+    f'Xft.dpi: {profile["dpi"]}\n'
+    f'Xcursor.size: {profile["cursor_size"]}\n'
+  )
+  subprocess.run(["xrdb", "-quiet", "-merge", "-"], input=resources, text=True, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+  subprocess.run(["xrandr", "--dpi", str(profile["dpi"])], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
+  current_mode = current_xrandr_mode(env)
+  if current_mode is None:
+    return 0
+
+  current_width, current_height = current_mode
+  scaled_width = max(current_width, math.floor((current_width * int(profile["scale"]) / 100) + 0.5))
+  scaled_height = max(current_height, math.floor((current_height * int(profile["scale"]) / 100) + 0.5))
+  fbmm_width = max(120, math.floor((scaled_width * 25.4 / int(profile["dpi"])) + 0.5))
+  fbmm_height = max(90, math.floor((scaled_height * 25.4 / int(profile["dpi"])) + 0.5))
+
+  subprocess.run(["xrandr", "--fbmm", f"{fbmm_width}x{fbmm_height}"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+  subprocess.run(["xrandr", "--fb", f"{scaled_width}x{scaled_height}"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
+  for output in connected_outputs(env):
+    subprocess.run(["xrandr", "--output", output, "--scale-from", f"{scaled_width}x{scaled_height}"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
+  return 0
+
+
 def print_summary(profile: dict[str, float | int | str]) -> None:
     print(f'ui-scale: {profile["scale"]}%')
     print(f'vnc-framebuffer: {profile["width"]}x{profile["height"]} (base {profile["base_width"]}x{profile["base_height"]})')
@@ -323,8 +400,10 @@ def main() -> int:
         return 0
     if action == "apply-session":
         return apply_session(values, profile)
+    if action == "apply-xrdp-session":
+      return apply_xrdp_session(values, profile)
 
-    print("Usage: jrmc-scale-profile {exports|size|geometry|summary|apply-session}", file=sys.stderr)
+    print("Usage: jrmc-scale-profile {exports|size|geometry|summary|apply-session|apply-xrdp-session}", file=sys.stderr)
     return 1
 
 
@@ -336,11 +415,22 @@ cat <<'EOF' >/usr/local/bin/jrmc-scale-watch
 #!/usr/bin/env bash
 set -euo pipefail
 
+target="${1:-shared}"
+
+case "${target}" in
+  shared) action="apply-session" ;;
+  xrdp) action="apply-xrdp-session" ;;
+  *)
+    echo "Usage: jrmc-scale-watch [shared|xrdp]" >&2
+    exit 1
+    ;;
+esac
+
 last_signature=""
 while true; do
   signature="$(grep -E '^(JRMC_UI_SCALE|JRMC_WIDTH|JRMC_HEIGHT)=' /etc/default/jrmc 2>/dev/null | tr '\n' '|')"
   if [[ "${signature}" != "${last_signature}" ]]; then
-    /usr/local/bin/jrmc-scale-profile apply-session >/dev/null 2>&1 || true
+    /usr/local/bin/jrmc-scale-profile "${action}" >/dev/null 2>&1 || true
     last_signature="${signature}"
   fi
   sleep 2
@@ -731,8 +821,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-/usr/local/bin/jrmc-scale-profile apply-session >/dev/null 2>&1 || true
-/usr/local/bin/jrmc-scale-watch >/dev/null 2>&1 &
+/usr/local/bin/jrmc-scale-profile apply-xrdp-session >/dev/null 2>&1 || true
+/usr/local/bin/jrmc-scale-watch xrdp >/dev/null 2>&1 &
 scale_watch_pid=$!
 
 nohup /usr/bin/openbox >/tmp/jrmc-openbox-rdp.log 2>&1 &
