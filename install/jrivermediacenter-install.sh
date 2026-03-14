@@ -68,6 +68,13 @@ msg_info "Creating Service User"
 if ! id -u "${APP_USER}" >/dev/null 2>&1; then
   useradd -m -d "${APP_HOME}" -s /bin/bash "${APP_USER}"
 fi
+if [[ "${ENABLE_GPU:-no}" == "yes" ]]; then
+  for gpu_group in render video; do
+    if getent group "${gpu_group}" >/dev/null 2>&1; then
+      usermod -aG "${gpu_group}" "${APP_USER}" >/dev/null 2>&1 || true
+    fi
+  done
+fi
 echo "${APP_USER} ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/${APP_USER}
 chmod 0440 /etc/sudoers.d/${APP_USER}
 msg_ok "Created Service User"
@@ -805,24 +812,40 @@ join_lines() {
   awk 'BEGIN { first = 1 } { if (!first) printf ","; printf "%s", $0; first = 0 } END { if (first) printf "" }'
 }
 
+list_glob_paths() {
+  local pattern path
+  for pattern in "$@"; do
+    for path in ${pattern}; do
+      [[ -e "${path}" ]] || continue
+      printf '%s\n' "${path}"
+    done
+  done
+}
+
 first_render_node() {
-  if [[ -d /dev/dri ]]; then
-    find /dev/dri -maxdepth 1 -type c -name 'renderD*' | sort | head -n1
-  fi
+  list_glob_paths /dev/dri/renderD* | sort | head -n1
 }
 
 compact_dri_nodes() {
-  if [[ -d /dev/dri ]]; then
-    find /dev/dri -maxdepth 1 -type c -printf '%f\n' | sort | join_lines
-  fi
+  list_glob_paths /dev/dri/* | xargs -r -n1 basename | sort | join_lines
 }
 
 compact_nvidia_nodes() {
-  find /dev -maxdepth 1 -type c \( -name 'nvidia*' -o -name 'nvidia-caps' \) -printf '%f\n' 2>/dev/null | sort | join_lines
+  list_glob_paths /dev/nvidia* /dev/nvidia-caps/* | xargs -r -n1 basename | sort | join_lines
 }
 
 have_command() {
   command -v "$1" >/dev/null 2>&1
+}
+
+service_user_access() {
+  local target="$1"
+  local mode="$2"
+  if runuser -u "${JRMC_USER}" -- test "-${mode}" "${target}"; then
+    echo yes
+  else
+    echo no
+  fi
 }
 
 safe_probe() {
@@ -873,6 +896,13 @@ echo "lspci-gpus: ${lspci_summary}"
 echo "dri-render-node: ${render_node:-none}"
 echo "dri-nodes: $(compact_dri_nodes || true)"
 echo "nvidia-nodes: $(compact_nvidia_nodes || true)"
+if [[ -n "${render_node:-}" ]]; then
+  echo "service-user-render-read: $(service_user_access "${render_node}" r)"
+  echo "service-user-render-write: $(service_user_access "${render_node}" w)"
+else
+  echo "service-user-render-read: unavailable"
+  echo "service-user-render-write: unavailable"
+fi
 echo "ffmpeg-present: $(have_command ffmpeg && echo yes || echo no)"
 echo "ffmpeg-hwaccels: ${ffmpeg_hwaccels}"
 echo "ffmpeg-hw-encoders: ${ffmpeg_encoders}"
@@ -898,9 +928,18 @@ set -euo pipefail
 source /etc/default/jrmc
 
 render_node=""
-if [[ -d /dev/dri ]]; then
-  render_node="$(find /dev/dri -maxdepth 1 -type c -name 'renderD*' | sort | head -n1)"
-fi
+for candidate in /dev/dri/renderD*; do
+  [[ -e "${candidate}" ]] || continue
+  render_node="${candidate}"
+  break
+done
+
+has_nvidia_nodes=no
+for candidate in /dev/nvidiactl /dev/nvidia0 /dev/nvidia-uvm /dev/nvidia-caps/*; do
+  [[ -e "${candidate}" ]] || continue
+  has_nvidia_nodes=yes
+  break
+done
 
 failures=0
 
@@ -942,6 +981,18 @@ else
 fi
 echo
 
+if [[ -n "${render_node}" ]]; then
+  if runuser -u "${JRMC_USER}" -- test -r "${render_node}"; then
+    pass "JRiver service user can read render node"
+  else
+    fail "JRiver service user can read render node"
+  fi
+  echo
+else
+  skip "Render node access check unavailable"
+  echo
+fi
+
 if command -v ffmpeg >/dev/null 2>&1; then
   run_probe "FFmpeg reports hardware acceleration backends" ffmpeg -hide_banner -hwaccels
 else
@@ -950,7 +1001,7 @@ else
 fi
 
 if command -v vainfo >/dev/null 2>&1 && [[ -n "${render_node}" ]]; then
-  run_probe "VA-API driver probe" vainfo --display drm --device "${render_node}"
+  run_probe "VA-API driver probe" runuser -u "${JRMC_USER}" -- vainfo --display drm --device "${render_node}"
 else
   skip "VA-API probe unavailable"
   echo
@@ -958,22 +1009,22 @@ fi
 
 if command -v ffmpeg >/dev/null 2>&1 && [[ -n "${render_node}" ]] && ffmpeg -hide_banner -encoders 2>/dev/null | awk '{print $2}' | grep -qx 'h264_vaapi'; then
   run_probe "FFmpeg VA-API encode" \
-    ffmpeg -v error -vaapi_device "${render_node}" -f lavfi -i testsrc2=size=128x72:rate=1 -frames:v 1 -vf format=nv12,hwupload -c:v h264_vaapi -f null -
+    runuser -u "${JRMC_USER}" -- ffmpeg -v error -vaapi_device "${render_node}" -f lavfi -i testsrc2=size=128x128:rate=1 -frames:v 1 -vf format=nv12,hwupload -c:v h264_vaapi -f null -
 else
   skip "FFmpeg VA-API encode unavailable"
   echo
 fi
 
-if command -v nvidia-smi >/dev/null 2>&1; then
+if [[ "${has_nvidia_nodes}" == yes ]] && command -v nvidia-smi >/dev/null 2>&1; then
   run_probe "NVIDIA driver probe" nvidia-smi
 else
   skip "NVIDIA driver probe unavailable"
   echo
 fi
 
-if command -v ffmpeg >/dev/null 2>&1 && ffmpeg -hide_banner -encoders 2>/dev/null | awk '{print $2}' | grep -qx 'h264_nvenc'; then
+if [[ "${has_nvidia_nodes}" == yes ]] && command -v ffmpeg >/dev/null 2>&1 && ffmpeg -hide_banner -encoders 2>/dev/null | awk '{print $2}' | grep -qx 'h264_nvenc'; then
   run_probe "FFmpeg NVENC encode" \
-    ffmpeg -v error -f lavfi -i testsrc2=size=128x72:rate=1 -frames:v 1 -c:v h264_nvenc -f null -
+    runuser -u "${JRMC_USER}" -- ffmpeg -v error -f lavfi -i testsrc2=size=128x72:rate=1 -frames:v 1 -c:v h264_nvenc -f null -
 else
   skip "FFmpeg NVENC encode unavailable"
   echo
