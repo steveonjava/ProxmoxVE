@@ -710,6 +710,11 @@ window_properties() {
   xprop -id "${wid}" WM_CLASS _NET_WM_NAME WM_NAME _NET_WM_PID _NET_WM_STATE 2>/dev/null || true
 }
 
+is_popup_window() {
+  local props="$1"
+  [[ "${props}" == *'JRiver Popup Class'* ]]
+}
+
 is_jriver_window() {
   local props="$1"
   [[ "${props}" == *'MJFrame'* ]] || [[ "${props}" == *'Media_Center_35'* ]] || [[ "${props}" == *'JRiver Media Center'* ]]
@@ -728,6 +733,7 @@ find_window_id() {
     props="$(window_properties "${wid}")"
     [[ -n "${props}" ]] || continue
     is_jriver_window "${props}" || continue
+    is_popup_window "${props}" && continue
     if is_pid_match "${props}"; then
       echo "${wid}"
       return 0
@@ -745,6 +751,7 @@ find_window_id() {
     props="$(window_properties "${wid}")"
     [[ -n "${props}" ]] || continue
     is_jriver_window "${props}" || continue
+    is_popup_window "${props}" && continue
     echo "${wid}"
     return 0
   done < <(xdotool search --onlyvisible --pid "${app_pid}" 2>/dev/null || true)
@@ -754,6 +761,7 @@ find_window_id() {
     props="$(window_properties "${wid}")"
     [[ -n "${props}" ]] || continue
     is_jriver_window "${props}" || continue
+    is_popup_window "${props}" && continue
     echo "${wid}"
     return 0
   done < <(xdotool search --onlyvisible --class 'Media_Center_35' 2>/dev/null || true)
