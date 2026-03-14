@@ -346,6 +346,102 @@ done
 EOF
 chmod +x /usr/local/bin/jrmc-scale-watch
 
+cat <<'EOF' >/usr/local/bin/jrmc-app-scale
+#!/usr/bin/env bash
+set -euo pipefail
+
+source /etc/default/jrmc
+
+target="${1:-status}"
+settings_file="${JRMC_HOME}/.jriver/Media Center 35/Settings/User Settings.ini"
+
+mapped_scale() {
+  case "${JRMC_UI_SCALE:-100}" in
+    100) printf '1\n' ;;
+    125) printf '1.25\n' ;;
+    150) printf '1.5\n' ;;
+    175) printf '1.75\n' ;;
+    200) printf '2\n' ;;
+    *) printf '1\n' ;;
+  esac
+}
+
+target_scale() {
+  case "${1:-}" in
+    vnc) printf '1\n' ;;
+    rdp) mapped_scale ;;
+    *) return 1 ;;
+  esac
+}
+
+write_setting() {
+  local value="$1"
+  python3 - "$settings_file" "$value" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+value = sys.argv[2]
+
+if path.exists():
+    lines = path.read_text().splitlines()
+else:
+    lines = []
+
+new_lines = []
+found = False
+current_section = ""
+inserted_in_properties = False
+
+for line in lines:
+    stripped = line.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        if current_section == "[Properties]" and not found and not inserted_in_properties:
+            new_lines.append(f'Standard View - Size="{value}"')
+            inserted_in_properties = True
+        current_section = stripped
+
+    if line.startswith("Standard View - Size="):
+        new_lines.append(f'Standard View - Size="{value}"')
+        found = True
+    else:
+        new_lines.append(line)
+
+if not found:
+    if not lines:
+        new_lines = ["[Properties]", f'Standard View - Size="{value}"']
+    elif current_section == "[Properties]" and not inserted_in_properties:
+        new_lines.append(f'Standard View - Size="{value}"')
+    else:
+        if new_lines and new_lines[-1] != "":
+            new_lines.append("")
+        new_lines.append("[Properties]")
+        new_lines.append(f'Standard View - Size="{value}"')
+
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text("\n".join(new_lines) + "\n")
+PY
+}
+
+case "${target}" in
+  vnc|rdp)
+    scale_value="$(target_scale "${target}")"
+    write_setting "${scale_value}"
+    printf '%s\n' "${scale_value}"
+    ;;
+  status)
+    if [[ -f "${settings_file}" ]]; then
+      grep -m1 '^Standard View - Size=' "${settings_file}" | cut -d'=' -f2- || true
+    fi
+    ;;
+  *)
+    echo "Usage: jrmc-app-scale {vnc|rdp|status}" >&2
+    exit 1
+    ;;
+esac
+EOF
+chmod +x /usr/local/bin/jrmc-app-scale
+
 cat <<'EOF' >/usr/local/bin/jrmc-scale
 #!/usr/bin/env bash
 set -euo pipefail
@@ -409,6 +505,7 @@ restart_vnc_mode_if_active() {
 
 print_status() {
   /usr/local/bin/jrmc-scale-profile summary
+  echo "jriver-app-scale: $(/usr/local/bin/jrmc-app-scale status 2>/dev/null || true)"
   echo "shared-ui: $(systemctl is-active jrmc-ui.service 2>/dev/null || true)"
   echo "shared-vnc-backend: $(systemctl is-active jrmc-vnc.service 2>/dev/null || true)"
   echo "native-rdp: $(systemctl is-active xrdp.service 2>/dev/null || true)"
@@ -417,22 +514,27 @@ print_status() {
 case "${action}" in
   set)
     scale="${2:-}"
+    active_mode=""
     if ! allowed_scale "${scale}"; then
       echo "Usage: jrmc-scale set {100|125|150|175|200}" >&2
       exit 1
     fi
     update_default JRMC_UI_SCALE "${scale}"
     source /etc/default/jrmc
+    active_mode="$(/usr/local/bin/jrmc-mode status 2>/dev/null | awk -F': ' '/^active-mode:/ {print $2; exit}')"
     if restart_vnc_mode_if_active; then
       echo "JRMC UI scale set to ${scale}%."
       echo "VNC mode was restarted so the new framebuffer size takes effect immediately for noVNC and direct VNC."
     else
+      if [[ "${active_mode}" == "rdp" ]]; then
+        /usr/local/bin/jrmc-app-scale rdp >/dev/null 2>&1 || true
+      fi
       apply_shared_display_now
       echo "JRMC UI scale set to ${scale}%."
     fi
-    echo "Future VNC and native RDP sessions will use the new preset."
+    echo "Future VNC sessions keep JRiver internal scale at 1 while shared-display scaling follows the preset. Future RDP sessions map the preset into JRiver's own Standard View size setting."
     if systemctl is-active --quiet xrdp.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_RDP_PIDFILE}" >/dev/null 2>&1; then
-      echo "Active RDP sessions receive updated DPI hints best-effort; reconnect if the client ignores them."
+      echo "If an RDP JRiver session is already running, reconnect so the app relaunches with the updated JRiver internal scale."
     fi
     echo "For the sharpest result, let noVNC fit the larger framebuffer and keep client-side scaling at 100% / 1:1 in TigerVNC or Remmina when using high JRMC scale presets."
     ;;
@@ -732,6 +834,7 @@ openbox_pid=$!
 printf '%s\n' "${openbox_pid}" >"${JRMC_RDP_OPENBOX_PIDFILE}"
 sleep 1
 
+/usr/local/bin/jrmc-app-scale rdp >/dev/null 2>&1 || true
 /usr/bin/mediacenter35 &
 app_pid=$!
 printf '%s\n' "${app_pid}" >"${JRMC_RDP_PIDFILE}"
@@ -788,6 +891,7 @@ trap cleanup EXIT
 /usr/local/bin/jrmc-scale-watch >/dev/null 2>&1 &
 scale_watch_pid=$!
 
+/usr/local/bin/jrmc-app-scale vnc >/dev/null 2>&1 || true
 /usr/bin/mediacenter35 &
 app_pid=$!
 printf '%s\n' "${app_pid}" >"${JRMC_UI_PIDFILE}"
@@ -1484,7 +1588,8 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
         <a class="alt" href="/cgi-bin/jrmc-control.py?action=ui-scale-status">UI Scale Status</a>
       </div>
     </div>
-    <p>Scale presets persist for future VNC and RDP sessions. In VNC mode, larger presets request a larger server framebuffer so noVNC can scale it back down cleanly in the browser.</p>
+    <p>Scale presets persist for future VNC and RDP sessions. In VNC mode, larger presets request a larger server framebuffer so noVNC can scale it back down cleanly in the browser while JRiver keeps its own internal Standard View size at 1.</p>
+    <p>In RDP mode, the same presets are translated into JRiver's internal Standard View size before the app launches, so 100% maps to 1, 125% to 1.25, 150% to 1.5, 175% to 1.75, and 200% to 2.</p>
     <p>For the sharpest result, let noVNC fit the view automatically and prefer 100% / 1:1 client-side scaling in TigerVNC and Remmina when using a larger JRMC scale preset.</p>
   </div>
   <div class="card">
