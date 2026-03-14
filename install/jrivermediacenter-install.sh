@@ -1495,6 +1495,24 @@ persist_mode() {
   esac
 }
 
+sync_boot_units() {
+  local new_mode="$1"
+  case "${new_mode}" in
+    mediaserver)
+      systemctl enable jrmc-mediaserver.service >/dev/null 2>&1 || true
+      systemctl disable jrmc-vnc.service jrmc-ui.service jrmc-websockify.service jrmc-native-vnc.service xrdp.service xrdp-sesman.service >/dev/null 2>&1 || true
+      ;;
+    vnc)
+      systemctl enable jrmc-ui.service jrmc-websockify.service jrmc-native-vnc.service >/dev/null 2>&1 || true
+      systemctl disable jrmc-mediaserver.service jrmc-vnc.service xrdp.service xrdp-sesman.service >/dev/null 2>&1 || true
+      ;;
+    rdp)
+      systemctl enable xrdp-sesman.service xrdp.service >/dev/null 2>&1 || true
+      systemctl disable jrmc-mediaserver.service jrmc-vnc.service jrmc-ui.service jrmc-websockify.service jrmc-native-vnc.service >/dev/null 2>&1 || true
+      ;;
+  esac
+}
+
 current_mode() {
   if systemctl is-active --quiet xrdp.service || systemctl is-active --quiet xrdp-sesman.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_RDP_PIDFILE}" >/dev/null 2>&1; then
     echo "rdp"
@@ -1526,6 +1544,7 @@ case "${mode}" in
     systemctl restart jrmc-ui.service
     systemctl restart jrmc-native-vnc.service
     persist_mode vnc
+    sync_boot_units vnc
     echo "JRMC VNC mode started. Browser noVNC and direct VNC now share the same writable JRMC session."
     ;;
   mediaserver|server)
@@ -1534,6 +1553,7 @@ case "${mode}" in
     systemctl restart jrmc-vnc.service
     systemctl restart jrmc-mediaserver.service
     persist_mode mediaserver
+    sync_boot_units mediaserver
     echo "JRMC Media Server mode started. Interactive VNC and RDP transports were stopped."
     ;;
   rdp)
@@ -1542,11 +1562,13 @@ case "${mode}" in
     /usr/local/bin/jrmc-stop-rdp-session
     systemctl enable --now xrdp-sesman.service xrdp.service
     persist_mode rdp
+    sync_boot_units rdp
     echo "JRMC RDP mode started. VNC transports were stopped so RDP owns the writable JRMC session."
     ;;
   stop-ui)
     stop_vnc_runtime
     persist_mode mediaserver
+    sync_boot_units mediaserver
     echo "JRMC VNC mode stopped. Choose another mode to continue using JRMC."
     ;;
   stop-server)
