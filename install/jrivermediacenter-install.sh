@@ -31,13 +31,16 @@ update_os
 msg_info "Installing Dependencies"
 $STD apt install -y \
   apache2-utils \
+  alsa-utils \
   dbus-x11 \
   fcgiwrap \
+  libasound2-plugins \
   libpam-pwdfile \
   nginx \
   novnc \
   openbox \
   openssl \
+  pulseaudio-utils \
   python3 \
   ssl-cert \
   tigervnc-scraping-server \
@@ -1752,6 +1755,7 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
       </div>
     </div>
     <p>JRMC can send audio to a trusted-LAN Linux host running PipeWire with local ALSA speakers. When enabled, the active JRMC mode exports <code>PULSE_SERVER=tcp:host:port</code> and optionally <code>PULSE_SINK</code> before the player launches.</p>
+    <p>After restarting JRMC, select the ALSA output named <code>pulse</code> inside JRiver if it is not already chosen.</p>
     <p>Remote host setup: install PipeWire with the Pulse compatibility daemon, then configure <code>~/.config/pipewire/pipewire-pulse.conf.d/jrmc-network.conf</code> with <code>pulse.properties = { server.address = [ "unix:native" "tcp:4713" ] }</code>. Restart the user services with <code>systemctl --user restart pipewire pipewire-pulse</code>, confirm the chosen sink name with <code>pactl list short sinks</code>, and keep the listener restricted to a trusted LAN.</p>
     <p>After enabling or changing the target, switch JRMC modes or reconnect the current session so the player relaunches against the new audio endpoint.</p>
   </div>

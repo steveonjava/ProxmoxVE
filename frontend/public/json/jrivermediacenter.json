@@ -65,6 +65,10 @@
       "type": "info"
     },
     {
+      "text": "After enabling remote audio and restarting JRiver, the expected Linux output device inside JRiver is the ALSA device named pulse.",
+      "type": "info"
+    },
+    {
       "text": "Remote host setup requires PipeWire plus pipewire-pulse listening on a trusted LAN address such as tcp:4713, then choosing a playback sink from `pactl list short sinks`.",
       "type": "info"
     },
