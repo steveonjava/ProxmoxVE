@@ -730,11 +730,26 @@ sync_jriver_output() {
 
 jriver_output_status() {
   if [[ -f "${settings_file}" ]]; then
-    awk '
-      $0 == "[Zones\\0\\ALSA]" { in_section=1; next }
-      /^\[/ && in_section { exit }
-      in_section && /^Output Descriptor=/ { print substr($0, index($0, "=") + 1); exit }
-    ' "${settings_file}" | tr -d '"' || true
+    python3 - "${settings_file}" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+section = r"[Zones\\0\\ALSA]"
+in_section = False
+
+for raw_line in path.read_text().splitlines():
+    line = raw_line.strip()
+    if line.startswith("[") and line.endswith("]"):
+        if in_section:
+            break
+        in_section = line == section
+        continue
+
+    if in_section and line.startswith("Output Descriptor="):
+        print(line.split("=", 1)[1].strip().strip('"'))
+        break
+PY
   fi
 }
 
