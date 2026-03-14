@@ -608,6 +608,7 @@ set -euo pipefail
 source /etc/default/jrmc
 
 action="${1:-status}"
+settings_file="${JRMC_HOME}/.jriver/Media Center 35/Settings/User Settings.ini"
 
 update_default() {
   local key="$1"
@@ -651,6 +652,92 @@ CONF
   [[ -f "${JRMC_HOME}/.config/pulse/client.conf" ]] && chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_HOME}/.config/pulse/client.conf"
 }
 
+write_jriver_output() {
+  local descriptor="$1"
+  python3 - "$settings_file" "$descriptor" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+descriptor = sys.argv[2]
+section = r"[Zones\\0\\ALSA]"
+updates = {
+    "ALSA Output Format": 'i:"0"',
+    "Buffer Time": 'i:"400000"',
+    "Mixer Device": 'i:"-1"',
+    "Output Descriptor": f'"{descriptor}"',
+    "Output DSD": 'i:"0"',
+    "Period Time": 'i:"100000"',
+}
+
+if path.exists():
+    lines = path.read_text().splitlines()
+else:
+    lines = []
+
+new_lines = []
+current_section = None
+in_target = False
+seen = set()
+
+for line in lines:
+    stripped = line.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        if in_target:
+            for key, value in updates.items():
+                if key not in seen:
+                    new_lines.append(f"{key}={value}")
+            seen.clear()
+        current_section = stripped
+        in_target = current_section == section
+        new_lines.append(line)
+        continue
+
+    if in_target and "=" in line:
+        key, _value = line.split("=", 1)
+        if key in updates:
+            new_lines.append(f"{key}={updates[key]}")
+            seen.add(key)
+            continue
+
+    new_lines.append(line)
+
+if in_target:
+    for key, value in updates.items():
+        if key not in seen:
+            new_lines.append(f"{key}={value}")
+elif not lines:
+    new_lines = [section] + [f"{key}={value}" for key, value in updates.items()]
+else:
+    if new_lines and new_lines[-1] != "":
+        new_lines.append("")
+    new_lines.append(section)
+    new_lines.extend(f"{key}={value}" for key, value in updates.items())
+
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text("\n".join(new_lines) + "\n")
+PY
+  chown "${JRMC_USER}:${JRMC_USER}" "${settings_file}" >/dev/null 2>&1 || true
+}
+
+sync_jriver_output() {
+  if [[ "${JRMC_REMOTE_AUDIO_ENABLED:-0}" == "1" && -n "${JRMC_REMOTE_AUDIO_HOST:-}" ]]; then
+    write_jriver_output "jrmc_remote"
+  else
+    write_jriver_output "Default"
+  fi
+}
+
+jriver_output_status() {
+  if [[ -f "${settings_file}" ]]; then
+    awk '
+      $0 == "[Zones\\0\\ALSA]" { in_section=1; next }
+      /^\[/ && in_section { exit }
+      in_section && /^Output Descriptor=/ { print substr($0, index($0, "=") + 1); exit }
+    ' "${settings_file}" | tr -d '"' || true
+  fi
+}
+
 emit_env() {
   if [[ "${JRMC_REMOTE_AUDIO_ENABLED:-0}" == "1" && -n "${JRMC_REMOTE_AUDIO_HOST:-}" ]]; then
     printf 'export ALSA_DEFAULT_PCM=%q\n' "jrmc_remote"
@@ -667,6 +754,7 @@ print_status() {
   echo "remote-audio-host: ${JRMC_REMOTE_AUDIO_HOST:-}"
   echo "remote-audio-port: ${JRMC_REMOTE_AUDIO_PORT:-4713}"
   echo "remote-audio-sink: ${JRMC_REMOTE_AUDIO_SINK:-}"
+  echo "jriver-output-descriptor: $(jriver_output_status)"
   if [[ "${JRMC_REMOTE_AUDIO_ENABLED:-0}" == "1" && -n "${JRMC_REMOTE_AUDIO_HOST:-}" ]]; then
     echo "pulse-server: tcp:${JRMC_REMOTE_AUDIO_HOST}:${JRMC_REMOTE_AUDIO_PORT:-4713}"
   else
@@ -693,6 +781,7 @@ case "${action}" in
     update_default JRMC_REMOTE_AUDIO_SINK "${sink}"
     source /etc/default/jrmc
     write_client_conf
+    sync_jriver_output
     echo "Remote audio enabled: tcp:${JRMC_REMOTE_AUDIO_HOST}:${JRMC_REMOTE_AUDIO_PORT}"
     if [[ -n "${JRMC_REMOTE_AUDIO_SINK:-}" ]]; then
       echo "Preferred sink: ${JRMC_REMOTE_AUDIO_SINK}"
@@ -703,16 +792,20 @@ case "${action}" in
     update_default JRMC_REMOTE_AUDIO_ENABLED 0
     source /etc/default/jrmc
     write_client_conf
+    sync_jriver_output
     echo "Remote audio disabled."
     ;;
   emit-env)
     emit_env
     ;;
+  sync-jriver-output)
+    sync_jriver_output
+    ;;
   status)
     print_status
     ;;
   *)
-    echo "Usage: jrmc-remote-audio {enable <host> [port] [sink]|disable|status|emit-env}" >&2
+    echo "Usage: jrmc-remote-audio {enable <host> [port] [sink]|disable|status|emit-env|sync-jriver-output}" >&2
     exit 1
     ;;
 esac
@@ -1010,6 +1103,7 @@ printf '%s\n' "${openbox_pid}" >"${JRMC_RDP_OPENBOX_PIDFILE}"
 sleep 1
 
 /usr/local/bin/jrmc-app-scale rdp >/dev/null 2>&1 || true
+/usr/local/bin/jrmc-remote-audio sync-jriver-output >/dev/null 2>&1 || true
 /usr/bin/mediacenter35 &
 app_pid=$!
 printf '%s\n' "${app_pid}" >"${JRMC_RDP_PIDFILE}"
@@ -1068,6 +1162,7 @@ trap cleanup EXIT
 scale_watch_pid=$!
 
 /usr/local/bin/jrmc-app-scale vnc >/dev/null 2>&1 || true
+/usr/local/bin/jrmc-remote-audio sync-jriver-output >/dev/null 2>&1 || true
 /usr/bin/mediacenter35 &
 app_pid=$!
 printf '%s\n' "${app_pid}" >"${JRMC_UI_PIDFILE}"
@@ -1090,6 +1185,7 @@ for _i in $(seq 1 30); do
   sleep 0.5
 done
 
+/usr/local/bin/jrmc-remote-audio sync-jriver-output >/dev/null 2>&1 || true
 exec /usr/bin/mediacenter35 /MediaServer
 EOF
 chmod +x /usr/local/bin/jrmc-mediaserver-start
