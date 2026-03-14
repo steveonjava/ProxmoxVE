@@ -65,7 +65,7 @@
       "type": "info"
     },
     {
-      "text": "After enabling remote audio and restarting JRiver, the preferred Linux output device inside JRiver is the ALSA device named jrmc_remote.",
+      "text": "After enabling remote audio and restarting JRiver, the preferred Linux output device inside JRiver is pulse.",
       "type": "info"
     },
     {
