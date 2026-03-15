@@ -15,8 +15,7 @@ RUNTIME_DIR="${APP_HOME}/.cache/jrmc"
 WEB_ROOT="/usr/share/jrmc-web"
 CGI_BIN="/usr/lib/cgi-bin"
 JRMC_DISPLAY=1
-JRMC_VNC_PORT=5901
-JRMC_NATIVE_VNC_PORT=5902
+JRMC_VNC_PORT=5900
 JRMC_NATIVE_RDP_PORT=3389
 JRMC_WEBSOCKIFY_PORT=6080
 JRMC_WEB_PORT=5800
@@ -44,15 +43,12 @@ $STD apt install -y \
   dbus-x11 \
   fcgiwrap \
   libasound2-plugins \
-  libpam-pwdfile \
   nginx \
   novnc \
   openbox \
-  openssl \
   pulseaudio-utils \
   python3 \
   ssl-cert \
-  tigervnc-scraping-server \
   tigervnc-standalone-server \
   websockify \
   x11-utils \
@@ -93,7 +89,6 @@ JRMC_USER="${APP_USER}"
 JRMC_HOME="${APP_HOME}"
 JRMC_DISPLAY="${JRMC_DISPLAY}"
 JRMC_VNC_PORT="${JRMC_VNC_PORT}"
-JRMC_NATIVE_VNC_PORT="${JRMC_NATIVE_VNC_PORT}"
 JRMC_NATIVE_RDP_PORT="${JRMC_NATIVE_RDP_PORT}"
 JRMC_WEBSOCKIFY_PORT="${JRMC_WEBSOCKIFY_PORT}"
 JRMC_WEB_PORT="${JRMC_WEB_PORT}"
@@ -108,22 +103,14 @@ JRMC_REMOTE_AUDIO_HOST=""
 JRMC_REMOTE_AUDIO_PORT="4713"
 JRMC_REMOTE_AUDIO_SINK=""
 JRMC_WEB_HTPASSWD="/etc/nginx/jrmc.htpasswd"
-JRMC_VNC_HTPASSWD="${CONFIG_DIR}/native-vnc.htpasswd"
+JRMC_VNC_PASSWD_FILE="${CONFIG_DIR}/vncpasswd"
 JRMC_BOOTSTRAP_FILE="${CONFIG_DIR}/bootstrap-complete"
-JRMC_NATIVE_VNC_ENABLED="0"
 JRMC_NATIVE_RDP_ENABLED="0"
 JRMC_NATIVE_RDP_USER="${APP_USER}"
-JRMC_VNC_PAM_SERVICE="jrmc-vnc"
-JRMC_NATIVE_VNC_SECURITY="TLSPlain"
-JRMC_NATIVE_VNC_PIDFILE="${CONFIG_DIR}/native-vnc.pid"
 JRMC_RUNTIME_DIR="${RUNTIME_DIR}"
 JRMC_UI_PIDFILE="${RUNTIME_DIR}/ui.pid"
 JRMC_RDP_PIDFILE="${RUNTIME_DIR}/rdp.pid"
 JRMC_RDP_OPENBOX_PIDFILE="${RUNTIME_DIR}/rdp-openbox.pid"
-JRMC_NATIVE_VNC_CERT="${CONFIG_DIR}/native-vnc-cert.pem"
-JRMC_NATIVE_VNC_KEY="${CONFIG_DIR}/native-vnc-key.pem"
-JRMC_NATIVE_VNC_PEM="${CONFIG_DIR}/native-vnc-server.pem"
-JRMC_NATIVE_VNC_LOG="/tmp/jrmc-native-vnc.log"
 EOF
 chmod 0644 /etc/default/jrmc
 msg_ok "Prepared Runtime Directories"
@@ -151,11 +138,11 @@ print(''.join(secrets.choice(alphabet) for _ in range(32)))
 PY
 )
 htpasswd -b -c -5 /etc/nginx/jrmc.htpasswd disabled "${tmp_password}" >/dev/null 2>&1
-htpasswd -b -c -5 "${CONFIG_DIR}/native-vnc.htpasswd" disabled "${tmp_password}" >/dev/null 2>&1
+printf '%s\n' "${tmp_password}" | tigervncpasswd -f >"${CONFIG_DIR}/vncpasswd"
 chown root:www-data /etc/nginx/jrmc.htpasswd
 chmod 0640 /etc/nginx/jrmc.htpasswd
-chown "${APP_USER}:${APP_USER}" "${CONFIG_DIR}/native-vnc.htpasswd"
-chmod 0600 "${CONFIG_DIR}/native-vnc.htpasswd"
+chown "${APP_USER}:${APP_USER}" "${CONFIG_DIR}/vncpasswd"
+chmod 0600 "${CONFIG_DIR}/vncpasswd"
 
 cat <<'EOF' >/usr/local/bin/jrmc-vnc-start
 #!/usr/bin/env bash
@@ -181,15 +168,15 @@ args=(
   -rfbport "${JRMC_VNC_PORT}"
   -AlwaysShared
   -NeverShared=0
-  -SecurityTypes None
+  -SecurityTypes VncAuth
   -desktop "JRiver Media Center"
   -auth "${HOME}/.Xauthority"
+  -PasswordFile "${JRMC_VNC_PASSWD_FILE}"
   -IdleTimeout 0
   -MaxConnectionTime 0
   -MaxDisconnectionTime 0
   -MaxIdleTime 0
   -AcceptSetDesktopSize=1
-  -localhost 1
 )
 
 exec /usr/bin/Xtigervnc "${args[@]}"
@@ -1266,16 +1253,6 @@ stop_pidfile "${JRMC_RDP_OPENBOX_PIDFILE}"
 EOF
 chmod +x /usr/local/bin/jrmc-stop-rdp-session
 
-cat <<'EOF' >/usr/local/bin/jrmc-stop-shared-ui
-#!/usr/bin/env bash
-set -euo pipefail
-source /etc/default/jrmc
-
-systemctl stop jrmc-native-vnc.service jrmc-ui.service jrmc-websockify.service jrmc-vnc.service >/dev/null 2>&1 || true
-rm -f "${JRMC_UI_PIDFILE}"
-EOF
-chmod +x /usr/local/bin/jrmc-stop-shared-ui
-
 cat <<'EOF' >/usr/local/bin/jrmc-rdp-session-start
 #!/usr/bin/env bash
 set -euo pipefail
@@ -1426,132 +1403,24 @@ exec /usr/bin/websockify 127.0.0.1:${JRMC_WEBSOCKIFY_PORT} 127.0.0.1:${JRMC_VNC_
 EOF
 chmod +x /usr/local/bin/jrmc-websockify-start
 
-cat <<'EOF' >/usr/local/bin/jrmc-native-vnc-cert-ensure
+cat <<'EOF' >/usr/local/bin/jrmc-vnc-passwd-sync
 #!/usr/bin/env bash
 set -euo pipefail
 source /etc/default/jrmc
 
-install -d -m 755 "$(dirname "${JRMC_NATIVE_VNC_CERT}")"
+password="${1:-}"
 
-if [[ ! -s "${JRMC_NATIVE_VNC_CERT}" || ! -s "${JRMC_NATIVE_VNC_KEY}" ]]; then
-  host_name="$(hostname -f 2>/dev/null || hostname)"
-  host_ip="$(hostname -I | awk '{print $1}')"
-  tmp_cfg="$(mktemp)"
-
-  cat >"${tmp_cfg}" <<CFG
-[req]
-prompt = no
-distinguished_name = dn
-x509_extensions = v3_req
-
-[dn]
-CN = ${host_name}
-
-[v3_req]
-subjectAltName = DNS:${host_name}${host_ip:+,IP:${host_ip}}
-keyUsage = critical,digitalSignature,keyEncipherment
-extendedKeyUsage = serverAuth
-CFG
-
-  openssl req -x509 -nodes -newkey rsa:2048 -sha256 -days 825 \
-    -keyout "${JRMC_NATIVE_VNC_KEY}" \
-    -out "${JRMC_NATIVE_VNC_CERT}" \
-    -config "${tmp_cfg}" \
-    -extensions v3_req >/dev/null 2>&1
-
-  rm -f "${tmp_cfg}"
-fi
-
-cat "${JRMC_NATIVE_VNC_CERT}" "${JRMC_NATIVE_VNC_KEY}" >"${JRMC_NATIVE_VNC_PEM}"
-
-chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_NATIVE_VNC_CERT}" "${JRMC_NATIVE_VNC_KEY}" "${JRMC_NATIVE_VNC_PEM}"
-chmod 0644 "${JRMC_NATIVE_VNC_CERT}"
-chmod 0600 "${JRMC_NATIVE_VNC_KEY}" "${JRMC_NATIVE_VNC_PEM}"
-EOF
-chmod +x /usr/local/bin/jrmc-native-vnc-cert-ensure
-
-cat <<'EOF' >/usr/local/bin/jrmc-native-vnc-auth
-#!/usr/bin/env bash
-set -euo pipefail
-source /etc/default/jrmc
-
-IFS= read -r username || exit 1
-IFS= read -r password || exit 1
-
-if [[ ! "${username}" =~ ^[A-Za-z0-9._-]{3,32}$ ]]; then
+if [[ -z "${password}" ]]; then
+  echo "Usage: jrmc-vnc-passwd-sync <password>" >&2
   exit 1
 fi
 
-htpasswd -vb "${JRMC_VNC_HTPASSWD}" "${username}" "${password}" >/dev/null 2>&1
+install -d -m 700 -o "${JRMC_USER}" -g "${JRMC_USER}" "$(dirname "${JRMC_VNC_PASSWD_FILE}")"
+printf '%s\n' "${password}" | tigervncpasswd -f >"${JRMC_VNC_PASSWD_FILE}"
+chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_VNC_PASSWD_FILE}"
+chmod 0600 "${JRMC_VNC_PASSWD_FILE}"
 EOF
-chmod +x /usr/local/bin/jrmc-native-vnc-auth
-
-cat <<'EOF' >/usr/local/bin/jrmc-native-vnc-clean
-#!/usr/bin/env bash
-set -euo pipefail
-source /etc/default/jrmc
-
-install -d -m 700 -o "${JRMC_USER}" -g "${JRMC_USER}" "${JRMC_HOME}/.config/tigervnc"
-find "${JRMC_HOME}/.config/tigervnc" -maxdepth 1 \( -type l -o -type f \) -name "*:${JRMC_DISPLAY}.pid" -delete 2>/dev/null || true
-rm -f "${JRMC_NATIVE_VNC_PIDFILE}"
-EOF
-chmod +x /usr/local/bin/jrmc-native-vnc-clean
-
-cat <<'EOF' >/usr/local/bin/jrmc-native-vnc-start
-#!/usr/bin/env bash
-set -euo pipefail
-source /etc/default/jrmc
-
-export HOME="${JRMC_HOME}"
-export USER="${JRMC_USER}"
-export DISPLAY=":${JRMC_DISPLAY}"
-export XAUTHORITY="${JRMC_HOME}/.Xauthority"
-
-/usr/local/bin/jrmc-native-vnc-clean
-
-for _i in $(seq 1 30); do
-  xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1 && break
-  sleep 0.5
-done
-
-if ! xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1; then
-  echo "JRMC display ${DISPLAY} is not ready for native VNC." >&2
-  exit 1
-fi
-
-args=(
-  -display "${DISPLAY}"
-  -pidfile "${JRMC_NATIVE_VNC_PIDFILE}"
-  -rfbport "${JRMC_NATIVE_VNC_PORT}"
-  -SecurityTypes "${JRMC_NATIVE_VNC_SECURITY}"
-  -PAMService "${JRMC_VNC_PAM_SERVICE}"
-  -PlainUsers '*'
-  -AlwaysShared
-)
-
-if [[ "${JRMC_NATIVE_VNC_SECURITY}" == X509* ]]; then
-  /usr/local/bin/jrmc-native-vnc-cert-ensure
-  args+=(
-    -X509Cert "${JRMC_NATIVE_VNC_CERT}"
-    -X509Key "${JRMC_NATIVE_VNC_KEY}"
-  )
-fi
-
-exec /usr/bin/x0vncserver "${args[@]}"
-EOF
-chmod +x /usr/local/bin/jrmc-native-vnc-start
-
-cat <<'EOF' >/usr/local/bin/jrmc-native-vnc-stop
-#!/usr/bin/env bash
-set -euo pipefail
-source /etc/default/jrmc
-
-export DISPLAY=":${JRMC_DISPLAY}"
-
-/usr/bin/x0vncserver -kill -display "${DISPLAY}" -rfbport "${JRMC_NATIVE_VNC_PORT}" >/dev/null 2>&1 || true
-/usr/local/bin/jrmc-native-vnc-clean
-EOF
-chmod +x /usr/local/bin/jrmc-native-vnc-stop
+chmod +x /usr/local/bin/jrmc-vnc-passwd-sync
 
 cat <<'EOF' >/usr/local/bin/jrmc-sync-rdp-user
 #!/usr/bin/env bash
@@ -1643,12 +1512,10 @@ fi
 source /etc/default/jrmc
 
 htpasswd -b -c -5 "${JRMC_WEB_HTPASSWD}" "${username}" "${password}" >/dev/null 2>&1
-htpasswd -b -c -5 "${JRMC_VNC_HTPASSWD}" "${username}" "${password}" >/dev/null 2>&1
+/usr/local/bin/jrmc-vnc-passwd-sync "${password}"
 touch "${JRMC_BOOTSTRAP_FILE}"
 chown root:www-data "${JRMC_WEB_HTPASSWD}"
 chmod 0640 "${JRMC_WEB_HTPASSWD}"
-chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_VNC_HTPASSWD}"
-chmod 0600 "${JRMC_VNC_HTPASSWD}"
 chmod 0644 "${JRMC_BOOTSTRAP_FILE}"
 
 cat <<CREDS >/root/jrmc.creds
@@ -1660,7 +1527,8 @@ Password: ${password}
 
 Default mode: Media Server
 Modes: choose Media Server, VNC, or RDP from Dashboard or jrmc-mode.
-VNC mode: browser noVNC and direct VNC on port ${JRMC_NATIVE_VNC_PORT} run together against the same JRMC session using the Dashboard username and password.
+VNC mode: browser noVNC and direct VNC on port ${JRMC_VNC_PORT} run together against the same JRMC session through one Xtigervnc backend.
+VNC authentication: after Dashboard sign-in, use the same Dashboard password when noVNC or a native VNC client prompts for the VNC password.
 RDP mode: native RDP on port ${JRMC_NATIVE_RDP_PORT} for Remmina using the same username and password as Dashboard.
 UI Scale: set 100%-200% presets from Dashboard or jrmc-scale; active sessions update best-effort.
 Remote audio: optionally point JRMC at a trusted-LAN PipeWire Pulse endpoint from Dashboard or jrmc-remote-audio.
@@ -1709,15 +1577,12 @@ persist_mode() {
   update_default JRMC_MODE "${new_mode}"
   case "${new_mode}" in
     mediaserver)
-      update_default JRMC_NATIVE_VNC_ENABLED 0
       update_default JRMC_NATIVE_RDP_ENABLED 0
       ;;
     vnc)
-      update_default JRMC_NATIVE_VNC_ENABLED 1
       update_default JRMC_NATIVE_RDP_ENABLED 0
       ;;
     rdp)
-      update_default JRMC_NATIVE_VNC_ENABLED 0
       update_default JRMC_NATIVE_RDP_ENABLED 1
       ;;
   esac
@@ -1728,15 +1593,15 @@ sync_boot_units() {
   case "${new_mode}" in
     mediaserver)
       systemctl enable jrmc-mediaserver.service >/dev/null 2>&1 || true
-      systemctl disable jrmc-vnc.service jrmc-ui.service jrmc-websockify.service jrmc-native-vnc.service xrdp.service xrdp-sesman.service >/dev/null 2>&1 || true
+      systemctl disable jrmc-vnc.service jrmc-ui.service jrmc-websockify.service xrdp.service xrdp-sesman.service >/dev/null 2>&1 || true
       ;;
     vnc)
-      systemctl enable jrmc-ui.service jrmc-websockify.service jrmc-native-vnc.service >/dev/null 2>&1 || true
+      systemctl enable jrmc-ui.service jrmc-websockify.service >/dev/null 2>&1 || true
       systemctl disable jrmc-mediaserver.service jrmc-vnc.service xrdp.service xrdp-sesman.service >/dev/null 2>&1 || true
       ;;
     rdp)
       systemctl enable xrdp-sesman.service xrdp.service >/dev/null 2>&1 || true
-      systemctl disable jrmc-mediaserver.service jrmc-vnc.service jrmc-ui.service jrmc-websockify.service jrmc-native-vnc.service >/dev/null 2>&1 || true
+      systemctl disable jrmc-mediaserver.service jrmc-vnc.service jrmc-ui.service jrmc-websockify.service >/dev/null 2>&1 || true
       ;;
   esac
 }
@@ -1744,7 +1609,7 @@ sync_boot_units() {
 current_mode() {
   if systemctl is-active --quiet xrdp.service || systemctl is-active --quiet xrdp-sesman.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_RDP_PIDFILE}" >/dev/null 2>&1; then
     echo "rdp"
-  elif systemctl is-active --quiet jrmc-ui.service || systemctl is-active --quiet jrmc-websockify.service || systemctl is-active --quiet jrmc-native-vnc.service; then
+  elif systemctl is-active --quiet jrmc-ui.service || systemctl is-active --quiet jrmc-websockify.service; then
     echo "vnc"
   elif systemctl is-active --quiet jrmc-mediaserver.service; then
     echo "mediaserver"
@@ -1759,7 +1624,7 @@ stop_rdp_runtime() {
 }
 
 stop_vnc_runtime() {
-  systemctl stop jrmc-native-vnc.service jrmc-ui.service jrmc-websockify.service jrmc-vnc.service >/dev/null 2>&1 || true
+  systemctl stop jrmc-ui.service jrmc-websockify.service jrmc-vnc.service >/dev/null 2>&1 || true
   rm -f "${JRMC_UI_PIDFILE}"
 }
 
@@ -1770,14 +1635,13 @@ case "${mode}" in
     systemctl restart jrmc-vnc.service
     systemctl restart jrmc-websockify.service
     systemctl restart jrmc-ui.service
-    systemctl restart jrmc-native-vnc.service
     persist_mode vnc
     sync_boot_units vnc
     echo "JRMC VNC mode started. Browser noVNC and direct VNC now share the same writable JRMC session."
     ;;
   mediaserver|server)
     stop_rdp_runtime
-    systemctl stop jrmc-native-vnc.service jrmc-ui.service jrmc-websockify.service || true
+    systemctl stop jrmc-ui.service jrmc-websockify.service || true
     systemctl restart jrmc-vnc.service
     systemctl restart jrmc-mediaserver.service
     persist_mode mediaserver
@@ -1812,7 +1676,6 @@ case "${mode}" in
     echo "jrmc-vnc: $(systemctl is-active jrmc-vnc.service 2>/dev/null || true)"
     echo "jrmc-websockify: $(systemctl is-active jrmc-websockify.service 2>/dev/null || true)"
     echo "jrmc-ui: $(systemctl is-active jrmc-ui.service 2>/dev/null || true)"
-    echo "jrmc-native-vnc: $(systemctl is-active jrmc-native-vnc.service 2>/dev/null || true)"
     echo "xrdp: $(systemctl is-active xrdp.service 2>/dev/null || true)"
     echo "ui-scale: ${JRMC_UI_SCALE:-100}%"
     echo "gpu-enabled: ${JRMC_GPU_ENABLED:-no}"
@@ -1823,7 +1686,7 @@ case "${mode}" in
     echo "remote-audio-sink: ${JRMC_REMOTE_AUDIO_SINK:-}"
     if [[ "${active_mode}" == "vnc" ]]; then
       echo "novnc: https://$(hostname -I | awk '{print $1}'):${JRMC_WEB_PORT}/novnc/vnc.html?autoconnect=1&resize=scale&path=/websockify"
-      echo "direct-vnc: $(hostname -I | awk '{print $1}'):${JRMC_NATIVE_VNC_PORT}"
+      echo "direct-vnc: $(hostname -I | awk '{print $1}'):${JRMC_VNC_PORT}"
     elif [[ "${active_mode}" == "rdp" ]]; then
       echo "rdp: $(hostname -I | awk '{print $1}'):${JRMC_NATIVE_RDP_PORT}"
       echo "rdp-user: ${JRMC_NATIVE_RDP_USER}"
@@ -2106,7 +1969,7 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=switch-vnc">Start VNC Mode</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=mode-status">Mode Status</a>
     </div>
-    <p>Browser noVNC uses the shared VNC framebuffer through the web dashboard. Direct VNC listens on port <code>5902</code>, uses <code>TLSPlain</code>, and signs in with the same Dashboard username and password.</p>
+    <p>Browser noVNC and direct VNC both connect to the same Xtigervnc server. Direct VNC listens on port <code>5900</code>, and both paths use the same VNC password derived from your Dashboard password.</p>
     <p>Both VNC transports always point to the same JRMC session. Switching to <strong>RDP</strong> or <strong>Media Server</strong> cleanly tears down VNC mode first.</p>
   </div>
   <div class="card">
@@ -2243,13 +2106,6 @@ EOF
 ln -sf /etc/nginx/sites-available/jrmc.conf /etc/nginx/sites-enabled/jrmc.conf
 rm -f /etc/nginx/sites-enabled/default
 
-cat <<'EOF' >/etc/pam.d/jrmc-vnc
-auth required pam_pwdfile.so pwdfile=/etc/jrmc/native-vnc.htpasswd
-account required pam_permit.so
-session required pam_permit.so
-password required pam_deny.so
-EOF
-
 sed -i 's/^port=.*/port=3389/' /etc/xrdp/xrdp.ini
 python3 - <<'PY'
 from pathlib import Path
@@ -2267,13 +2123,24 @@ PY
 systemctl disable --now xrdp.service xrdp-sesman.service >/dev/null 2>&1 || true
 
 cat <<'EOF' >/etc/sudoers.d/jrmc-web
-www-data ALL=(root) NOPASSWD: /usr/local/bin/jrmc-mode, /usr/local/bin/jrmc-direct-rdp, /usr/local/bin/jrmc-direct-vnc, /usr/local/bin/jrmc-scale, /usr/local/bin/jrmc-remote-audio, /usr/local/bin/jrmc-gpu-status, /usr/local/bin/jrmc-gpu-test, /usr/local/bin/jrmc-set-web-credentials
+www-data ALL=(root) NOPASSWD: /usr/local/bin/jrmc-mode, /usr/local/bin/jrmc-scale, /usr/local/bin/jrmc-remote-audio, /usr/local/bin/jrmc-gpu-status, /usr/local/bin/jrmc-gpu-test, /usr/local/bin/jrmc-set-web-credentials
 EOF
 chmod 0440 /etc/sudoers.d/jrmc-web
 
+
+if [[ -f /etc/X11/xrdp/xorg.conf ]]; then
+  render_node="$(find /dev/dri -maxdepth 1 -name 'renderD*' 2>/dev/null | sort | head -n1 || true)"
+  if [[ -n "${render_node}" ]]; then
+    sed -i "s#^\([[:space:]]*Option \"DRMDevice\" \)\"[^\"]*\"#\1\"${render_node}\"#" /etc/X11/xrdp/xorg.conf
+  fi
+  if grep -q 'Option "DRMAllowList"' /etc/X11/xrdp/xorg.conf; then
+    sed -i 's#^\([[:space:]]*Option "DRMAllowList" \)"[^"]*"#\1"i915 radeon amdgpu nouveau"#' /etc/X11/xrdp/xorg.conf
+  fi
+fi
+
 cat <<EOF >/etc/systemd/system/jrmc-vnc.service
 [Unit]
-Description=JRiver Media Center local VNC backend
+Description=JRiver Media Center shared Xtigervnc backend
 After=network.target
 
 [Service]
@@ -2282,25 +2149,6 @@ User=${APP_USER}
 ExecStartPre=-/bin/sh -c 'rm -f /tmp/.X${JRMC_DISPLAY}-lock /tmp/.X11-unix/X${JRMC_DISPLAY}'
 ExecStart=/usr/local/bin/jrmc-vnc-start
 ExecStop=/bin/kill -TERM \$MAINPID
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-cat <<EOF >/etc/systemd/system/jrmc-native-vnc.service
-[Unit]
-Description=JRiver Media Center native VNC compatibility backend
-After=jrmc-vnc.service jrmc-ui.service
-Requires=jrmc-vnc.service
-
-[Service]
-Type=forking
-PIDFile=${CONFIG_DIR}/native-vnc.pid
-ExecStartPre=/usr/local/bin/jrmc-native-vnc-clean
-ExecStart=/usr/local/bin/jrmc-native-vnc-start
-ExecStop=/usr/local/bin/jrmc-native-vnc-stop
 Restart=on-failure
 RestartSec=5
 
@@ -2378,7 +2226,7 @@ echo "==================================="
 echo
 echo "Web setup URL:        https://<container-ip>:5800/setup/"
 echo "Default mode:         Media Server"
-echo "VNC mode:             Browser noVNC plus direct VNC on port 5902 at the same time"
+echo "VNC mode:             Browser noVNC plus direct VNC on port 5900 through one Xtigervnc server"
 echo "UI Scale:             Presets 100/125/150/175/200 via Dashboard or jrmc-scale"
 echo "RDP mode:             Port 3389 for Remmina using the same Dashboard username; switching modes tears down the others first"
 echo "GPU passthrough:      Validate with jrmc-gpu-status and jrmc-gpu-test when enabled at install time"
