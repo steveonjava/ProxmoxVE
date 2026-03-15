@@ -168,7 +168,7 @@ args=(
   -rfbport "${JRMC_VNC_PORT}"
   -AlwaysShared
   -NeverShared=0
-  -SecurityTypes VncAuth
+  -SecurityTypes TLSVnc,VncAuth
   -desktop "JRiver Media Center"
   -auth "${HOME}/.Xauthority"
   -PasswordFile "${JRMC_VNC_PASSWD_FILE}"
