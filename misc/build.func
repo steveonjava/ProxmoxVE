@@ -1473,7 +1473,7 @@ _build_vars_diff() {
 
 # Build a temporary <app>.vars file from current advanced settings
 _build_current_app_vars_tmp() {
-  tmpf="$(mktemp /tmp/${NSAPP:-app}.vars.new.XXXXXX)"
+  tmpf="$(mktemp /tmp/"${NSAPP:-app}".vars.new.XXXXXX)"
 
   # NET/GW
   _net="${NET:-}"
@@ -3887,6 +3887,18 @@ EOF
       msg_custom "🔌" "${BL}" "Detected Coral TPU - configuring passthrough"
       echo "lxc.mount.entry: /dev/apex_0 dev/apex_0 none bind,optional,create=file" >>"$LXC_CONFIG"
     fi
+
+    if [[ "$APP" == "JRiver Media Center" ]] && [[ "${var_gpu:-no}" == "yes" ]] && [[ -e /dev/uinput ]]; then
+      msg_custom "🎮" "${GN}" "Detected /dev/uinput - configuring JRMC Sunshine input passthrough"
+      echo "dev99: /dev/uinput,gid=996" >>"$LXC_CONFIG"
+      if [[ -d /dev/input ]]; then
+        echo "lxc.cgroup2.devices.allow: c 13:* r" >>"$LXC_CONFIG"
+        echo "lxc.mount.entry: /dev/input dev/input none bind,optional,create=dir" >>"$LXC_CONFIG"
+      fi
+      if [[ -d /run/udev/data ]]; then
+        echo "lxc.mount.entry: /run/udev host-run-udev none bind,ro,optional,create=dir" >>"$LXC_CONFIG"
+      fi
+    fi
   }
 
   # Execute pre-start configurations
@@ -3971,6 +3983,8 @@ EOF
   }
 
   fix_gpu_gids
+  fix_jrmc_input_gid
+  configure_jrmc_sunshine_input_permissions
 
   # Fix Debian 13 LXC template bug where / is owned by nobody:nogroup
   # This must be done from the host as unprivileged containers cannot chown /
@@ -4052,7 +4066,7 @@ EOF'
   set +Eeuo pipefail # Disable ALL error handling temporarily
   trap - ERR         # Remove ERR trap completely
 
-  lxc-attach -n "$CTID" -- bash -c "$(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/install/${var_install}.sh)"
+  lxc-attach -n "$CTID" -- bash -c "$(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/install/"${var_install}".sh)"
   local lxc_exit=$?
 
   set -Eeuo pipefail       # Re-enable error handling
@@ -4148,7 +4162,7 @@ EOF'
       else
         msg_dev "Container ${CTID} kept for debugging"
       fi
-      exit $install_exit_code
+      exit "$install_exit_code"
     fi
 
     # Prompt user for cleanup with 60s timeout
@@ -4313,7 +4327,7 @@ EOF'
             echo -e "${BFR}${CM}${GN}MOTD/SSH ready - SSH into container: ssh root@${ct_ip}${CL}"
           fi
         fi
-        exit $install_exit_code
+        exit "$install_exit_code"
         ;;
       3)
         # Retry with verbose mode (full rebuild)
@@ -4378,7 +4392,7 @@ EOF'
           # Re-run install script in existing container (don't destroy/recreate)
           set +Eeuo pipefail
           trap - ERR
-          lxc-attach -n "$CTID" -- bash -c "$(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/install/${var_install}.sh)"
+          lxc-attach -n "$CTID" -- bash -c "$(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/install/"${var_install}".sh)"
           local apt_retry_exit=$?
           set -Eeuo pipefail
           trap 'error_handler' ERR
@@ -4465,7 +4479,7 @@ EOF'
 
         if [[ "$handled" == false ]]; then
           echo -e "\n${TAB}${YW}Invalid option. Container ${CTID} kept.${CL}"
-          exit $install_exit_code
+          exit "$install_exit_code"
         fi
         ;;
       esac
@@ -4482,7 +4496,7 @@ EOF'
     # This ensures status is updated even if the first attempt failed (e.g., HTTP 400)
     post_update_to_api "failed" "$install_exit_code" "force"
 
-    exit $install_exit_code
+    exit "$install_exit_code"
   fi
 }
 
@@ -4612,6 +4626,63 @@ fix_gpu_gids() {
       fi
     " >/dev/null 2>&1
   fi
+}
+
+fix_jrmc_input_gid() {
+  if [[ "$APP" != "JRiver Media Center" ]]; then
+    return 0
+  fi
+
+  if ! grep -q '/dev/uinput' "$LXC_CONFIG"; then
+    return 0
+  fi
+
+  msg_info "Detecting and setting correct JRMC input group ID"
+
+  local input_gid
+  input_gid=$(pct exec "$CTID" -- sh -c "getent group input 2>/dev/null | cut -d: -f3")
+
+  if [[ -z "$input_gid" ]]; then
+    pct exec "$CTID" -- sh -c "groupadd -r input 2>/dev/null || true" >/dev/null 2>&1
+    input_gid=$(pct exec "$CTID" -- sh -c "getent group input 2>/dev/null | cut -d: -f3")
+    [[ -z "$input_gid" ]] && input_gid="996"
+  fi
+
+  local configured_gid
+  configured_gid=$(sed -n -E 's|dev[0-9]+: /dev/uinput,gid=([0-9]+)|\1|p' "$LXC_CONFIG" | head -n1)
+  if [[ "$configured_gid" == "$input_gid" ]]; then
+    msg_ok "JRMC Sunshine input passthrough already configured (input:${input_gid})"
+    return 0
+  fi
+
+  pct stop "$CTID" >/dev/null 2>&1
+  sleep 1
+
+  sed -i -E "s|(dev[0-9]+: /dev/uinput),gid=[0-9]+|\1,gid=${input_gid}|g" "$LXC_CONFIG"
+
+  pct start "$CTID" >/dev/null 2>&1
+  sleep 2
+
+  msg_ok "JRMC Sunshine input passthrough configured (input:${input_gid})"
+}
+
+configure_jrmc_sunshine_input_permissions() {
+  if [[ "$APP" != "JRiver Media Center" ]] || [[ "${var_gpu:-no}" != "yes" ]] || [[ ! -e /dev/uinput ]]; then
+    return 0
+  fi
+
+  msg_info "Configuring host permissions for JRMC Sunshine virtual input devices"
+
+  cat <<'EOF' >/etc/udev/rules.d/85-jrmc-sunshine-input.rules
+ACTION=="add|change", SUBSYSTEM=="input", KERNEL=="event*", ATTRS{id/vendor}=="beef", ATTRS{id/product}=="dead", MODE:="0666", RUN+="/bin/chmod 0666 /dev/input/%k"
+ACTION=="add|change", SUBSYSTEM=="input", KERNEL=="mouse*", ATTRS{id/vendor}=="beef", ATTRS{id/product}=="dead", MODE:="0666", RUN+="/bin/chmod 0666 /dev/input/%k"
+ACTION=="add|change", SUBSYSTEM=="input", KERNEL=="js*", ATTRS{id/vendor}=="beef", ATTRS{id/product}=="dead", MODE:="0666", RUN+="/bin/chmod 0666 /dev/input/%k"
+EOF
+
+  udevadm control --reload >/dev/null 2>&1 || true
+  udevadm trigger --subsystem-match=input >/dev/null 2>&1 || true
+
+  msg_ok "Configured host permissions for JRMC Sunshine virtual input devices"
 }
 
 check_storage_support() {
@@ -4842,7 +4913,7 @@ create_lxc_container() {
         msg_ok "LXC stack upgraded."
         if [[ "$do_retry" == "yes" ]]; then
           msg_info "Retrying container creation after upgrade"
-          if pct create "$CTID" "${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE}" $PCT_OPTIONS >>"$LOGFILE" 2>&1; then
+          if pct create "$CTID" "${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE}" "$PCT_OPTIONS" >>"$LOGFILE" 2>&1; then
             msg_ok "Container created successfully after upgrade."
             return 0
           else
@@ -5073,7 +5144,7 @@ create_lxc_container() {
     fi
   fi
 
-  TEMPLATE_PATH="$(pvesm path $TEMPLATE_STORAGE:vztmpl/$TEMPLATE 2>/dev/null || true)"
+  TEMPLATE_PATH="$(pvesm path "$TEMPLATE_STORAGE":vztmpl/"$TEMPLATE" 2>/dev/null || true)"
   if [[ -z "$TEMPLATE_PATH" ]]; then
     TEMPLATE_BASE=$(awk -v s="$TEMPLATE_STORAGE" '$1==s {f=1} f && /path/ {print $2; exit}' /etc/pve/storage.cfg)
     [[ -n "$TEMPLATE_BASE" ]] && TEMPLATE_PATH="$TEMPLATE_BASE/template/cache/$TEMPLATE"
@@ -5137,7 +5208,7 @@ create_lxc_container() {
             TEMPLATE_SOURCE="online"
           fi
 
-          TEMPLATE_PATH="$(pvesm path $TEMPLATE_STORAGE:vztmpl/$TEMPLATE 2>/dev/null || true)"
+          TEMPLATE_PATH="$(pvesm path "$TEMPLATE_STORAGE":vztmpl/"$TEMPLATE" 2>/dev/null || true)"
           if [[ -z "$TEMPLATE_PATH" ]]; then
             TEMPLATE_BASE=$(awk -v s="$TEMPLATE_STORAGE" '$1==s {f=1} f && /path/ {print $2; exit}' /etc/pve/storage.cfg)
             [[ -n "$TEMPLATE_BASE" ]] && TEMPLATE_PATH="$TEMPLATE_BASE/template/cache/$TEMPLATE"
@@ -5315,7 +5386,7 @@ create_lxc_container() {
   msg_debug "Logfile: $LOGFILE"
 
   # First attempt (PCT_OPTIONS is a multi-line string, use it directly)
-  if ! pct create "$CTID" "${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE}" $PCT_OPTIONS >"$LOGFILE" 2>&1; then
+  if ! pct create "$CTID" "${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE}" "$PCT_OPTIONS" >"$LOGFILE" 2>&1; then
     msg_debug "Container creation failed on ${TEMPLATE_STORAGE}. Checking error..."
 
     # Check if template issue - retry with fresh download
@@ -5327,7 +5398,7 @@ create_lxc_container() {
     fi
 
     # Retry after repair
-    if ! pct create "$CTID" "${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE}" $PCT_OPTIONS >>"$LOGFILE" 2>&1; then
+    if ! pct create "$CTID" "${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE}" "$PCT_OPTIONS" >>"$LOGFILE" 2>&1; then
       # Fallback to local storage if not already on local
       if [[ "$TEMPLATE_STORAGE" != "local" ]]; then
         msg_info "Retrying container creation with fallback to local storage"
@@ -5340,7 +5411,7 @@ create_lxc_container() {
         else
           msg_ok "Trying local storage fallback"
         fi
-        if ! pct create "$CTID" "local:vztmpl/${TEMPLATE}" $PCT_OPTIONS >>"$LOGFILE" 2>&1; then
+        if ! pct create "$CTID" "local:vztmpl/${TEMPLATE}" "$PCT_OPTIONS" >>"$LOGFILE" 2>&1; then
           # Local fallback also failed - check for LXC stack version issue
           if grep -qiE 'unsupported .* version' "$LOGFILE"; then
             echo
@@ -5364,7 +5435,7 @@ create_lxc_container() {
             msg_error "Container creation failed. See $LOGFILE"
             if whiptail --yesno "pct create failed.\nDo you want to enable verbose debug mode and view detailed logs?" 12 70; then
               set -x
-              pct create "$CTID" "local:vztmpl/${TEMPLATE}" $PCT_OPTIONS 2>&1 | tee -a "$LOGFILE"
+              pct create "$CTID" "local:vztmpl/${TEMPLATE}" "$PCT_OPTIONS" 2>&1 | tee -a "$LOGFILE"
               set +x
             fi
             exit 209
@@ -5396,7 +5467,7 @@ create_lxc_container() {
           msg_error "Container creation failed. See $LOGFILE"
           if whiptail --yesno "pct create failed.\nDo you want to enable verbose debug mode and view detailed logs?" 12 70; then
             set -x
-            pct create "$CTID" "local:vztmpl/${TEMPLATE}" $PCT_OPTIONS 2>&1 | tee -a "$LOGFILE"
+            pct create "$CTID" "local:vztmpl/${TEMPLATE}" "$PCT_OPTIONS" 2>&1 | tee -a "$LOGFILE"
             set +x
           fi
           exit 209
