@@ -32,6 +32,8 @@ JRMC_SUNSHINE_PORT=47989
 JRMC_SUNSHINE_WEB_PORT=47990
 JRMC_WIDTH=1440
 JRMC_HEIGHT=900
+JRMC_SUNSHINE_WIDTH=1440
+JRMC_SUNSHINE_HEIGHT=900
 JRMC_UI_SCALE=100
 
 color
@@ -80,6 +82,7 @@ $STD apt install -y \
   python3 \
   ssl-cert \
   websockify \
+  xcvt \
   x11-utils \
   x11-xserver-utils \
   xauth \
@@ -143,6 +146,8 @@ JRMC_SUNSHINE_PORT="${JRMC_SUNSHINE_PORT}"
 JRMC_SUNSHINE_WEB_PORT="${JRMC_SUNSHINE_WEB_PORT}"
 JRMC_WIDTH="${JRMC_WIDTH}"
 JRMC_HEIGHT="${JRMC_HEIGHT}"
+JRMC_SUNSHINE_WIDTH="${JRMC_SUNSHINE_WIDTH}"
+JRMC_SUNSHINE_HEIGHT="${JRMC_SUNSHINE_HEIGHT}"
 JRMC_UI_SCALE="${JRMC_UI_SCALE}"
 JRMC_MODE="mediaserver"
 JRMC_GPU_ENABLED="${gpu_enabled_state}"
@@ -431,11 +436,19 @@ set -euo pipefail
 source /etc/default/jrmc
 
 adapter_name="$(awk -F= '/^[[:space:]]*adapter_name[[:space:]]*=/{sub(/^[[:space:]]+/, "", $2); sub(/[[:space:]]+$/, "", $2); print $2; exit}' "${JRMC_SUNSHINE_CONFIG_FILE}" 2>/dev/null || true)"
+active_resolution="$(runuser -u "${JRMC_USER}" -- env \
+  HOME="${JRMC_HOME}" \
+  USER="${JRMC_USER}" \
+  DISPLAY=":${JRMC_SUNSHINE_DISPLAY}" \
+  XAUTHORITY="${JRMC_SUNSHINE_XAUTHORITY}" \
+  xrandr --current 2>/dev/null | awk '/\*/{print $1; exit}' || true)"
 
 echo "sunshine-service: $(systemctl is-active jrmc-sunshine.service 2>/dev/null || true)"
 echo "sunshine-config: ${JRMC_SUNSHINE_CONFIG_FILE}"
 echo "sunshine-apps: ${JRMC_SUNSHINE_APPS_FILE}"
 echo "sunshine-display: :${JRMC_SUNSHINE_DISPLAY}"
+echo "sunshine-resolution: ${JRMC_SUNSHINE_WIDTH:-1440}x${JRMC_SUNSHINE_HEIGHT:-900}"
+echo "sunshine-active-resolution: ${active_resolution:-unknown}"
 echo "sunshine-admin: https://$(hostname -I | awk '{print $1}'):${JRMC_SUNSHINE_WEB_PORT}/"
 echo "moonlight-host: $(hostname -I | awk '{print $1}')"
 echo "sunshine-pid: $(/usr/local/bin/jrmc-pidfile-active "${JRMC_SUNSHINE_PIDFILE}" 2>/dev/null || true)"
@@ -449,11 +462,81 @@ echo "uinput-jriver-rw: $(runuser -u "${JRMC_USER}" -- test -r /dev/uinput -a -w
 EOF
 chmod +x /usr/local/bin/jrmc-sunshine-status
 
+cat <<'EOF' >/usr/local/bin/jrmc-sunshine-configure-display
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/default/jrmc
+
+width="${JRMC_SUNSHINE_WIDTH:-1440}"
+height="${JRMC_SUNSHINE_HEIGHT:-900}"
+
+if ! [[ "${width}" =~ ^[0-9]+$ && "${height}" =~ ^[0-9]+$ ]]; then
+  echo "Sunshine resolution must be numeric." >&2
+  exit 1
+fi
+
+if (( width < 640 || width > 7680 || height < 480 || height > 4320 )); then
+  echo "Sunshine resolution must stay within 640-7680 width and 480-4320 height." >&2
+  exit 1
+fi
+
+modeline="$(cvt -r "${width}" "${height}" 60 2>/dev/null | awk '/^Modeline /{sub(/^Modeline[[:space:]]+/, ""); print; exit}')"
+if [[ -z "${modeline}" ]]; then
+  modeline="$(cvt "${width}" "${height}" 60 2>/dev/null | awk '/^Modeline /{sub(/^Modeline[[:space:]]+/, ""); print; exit}')"
+fi
+
+if [[ -z "${modeline}" ]]; then
+  echo "Unable to generate an Xorg modeline for Sunshine resolution ${width}x${height}." >&2
+  exit 1
+fi
+
+mkdir -p /etc/X11
+cat <<CONFIG >/etc/X11/jrmc-sunshine-xorg.conf
+Section "ServerFlags"
+    Option "DontVTSwitch" "true"
+    Option "AutoAddDevices" "true"
+    Option "AutoEnableDevices" "true"
+EndSection
+
+Section "Monitor"
+    Identifier "JRMCMonitor"
+    HorizSync 28.0-160.0
+    VertRefresh 48.0-120.0
+    Modeline ${modeline}
+EndSection
+
+Section "Device"
+    Identifier "JRMCDevice"
+    Driver "dummy"
+    VideoRam 512000
+EndSection
+
+Section "Screen"
+    Identifier "JRMCScreen"
+    Device "JRMCDevice"
+    Monitor "JRMCMonitor"
+    DefaultDepth 24
+    SubSection "Display"
+        Depth 24
+        Modes "${width}x${height}"
+        Virtual ${width} ${height}
+    EndSubSection
+EndSection
+
+Section "ServerLayout"
+    Identifier "JRMCLayout"
+    Screen "JRMCScreen"
+EndSection
+CONFIG
+EOF
+chmod +x /usr/local/bin/jrmc-sunshine-configure-display
+
 cat <<'EOF' >/usr/local/bin/jrmc-sunshine-start
 #!/usr/bin/env bash
 set -euo pipefail
 source /etc/default/jrmc
 
+/usr/local/bin/jrmc-sunshine-configure-display
 /usr/local/bin/jrmc-sunshine-ready
 
 if grep -Eq '^[[:space:]]*encoder[[:space:]]*=[[:space:]]*vaapi([[:space:]]*#.*)?$' "${JRMC_SUNSHINE_CONFIG_FILE}"; then
@@ -619,44 +702,7 @@ wait "${sunshine_pid}"
 EOF
 chmod +x /usr/local/bin/jrmc-sunshine-start
 
-mkdir -p /etc/X11
-cat <<EOF >/etc/X11/jrmc-sunshine-xorg.conf
-Section "ServerFlags"
-    Option "DontVTSwitch" "true"
-    Option "AutoAddDevices" "true"
-    Option "AutoEnableDevices" "true"
-EndSection
-
-Section "Monitor"
-    Identifier "JRMCMonitor"
-    HorizSync 28.0-80.0
-    VertRefresh 48.0-75.0
-    Modeline "${JRMC_WIDTH}x${JRMC_HEIGHT}" 118.25 ${JRMC_WIDTH} 1488 1632 1824 ${JRMC_HEIGHT} 903 909 934
-EndSection
-
-Section "Device"
-    Identifier "JRMCDevice"
-    Driver "dummy"
-    VideoRam 256000
-EndSection
-
-Section "Screen"
-    Identifier "JRMCScreen"
-    Device "JRMCDevice"
-    Monitor "JRMCMonitor"
-    DefaultDepth 24
-    SubSection "Display"
-        Depth 24
-        Modes "${JRMC_WIDTH}x${JRMC_HEIGHT}"
-        Virtual ${JRMC_WIDTH} ${JRMC_HEIGHT}
-    EndSubSection
-EndSection
-
-Section "ServerLayout"
-    Identifier "JRMCLayout"
-    Screen "JRMCScreen"
-EndSection
-EOF
+/usr/local/bin/jrmc-sunshine-configure-display
 
 cat <<'EOF' >/usr/local/bin/jrmc-scale-profile
 #!/usr/bin/env python3
@@ -692,32 +738,42 @@ def build_profile(values: dict[str, str]) -> dict[str, float | int | str]:
     if scale not in ALLOWED_SCALES:
         scale = 100
 
-    base_width = max(800, int_value(values, "JRMC_WIDTH", 1440))
-    base_height = max(600, int_value(values, "JRMC_HEIGHT", 900))
-    width = max(640, math.floor((base_width * scale / 100) + 0.5))
-    height = max(480, math.floor((base_height * scale / 100) + 0.5))
+    shared_base_width = max(800, int_value(values, "JRMC_WIDTH", 1440))
+    shared_base_height = max(600, int_value(values, "JRMC_HEIGHT", 900))
+    shared_width = max(640, math.floor((shared_base_width * scale / 100) + 0.5))
+    shared_height = max(480, math.floor((shared_base_height * scale / 100) + 0.5))
+    sunshine_width = max(640, int_value(values, "JRMC_SUNSHINE_WIDTH", shared_base_width))
+    sunshine_height = max(480, int_value(values, "JRMC_SUNSHINE_HEIGHT", shared_base_height))
     dpi = max(96, math.floor((96 * scale / 100) + 0.5))
     gdk_scale = 2 if scale >= 175 else 1
     gdk_dpi_scale = (scale / 100) / gdk_scale
     qt_scale_factor = scale / 100
     cursor_size = max(24, math.floor((24 * scale / 100) + 0.5))
-    fbmm_width = max(120, math.floor((width * 25.4 / dpi) + 0.5))
-    fbmm_height = max(90, math.floor((height * 25.4 / dpi) + 0.5))
-    display = values.get("JRMC_DISPLAY", "1")
+    shared_fbmm_width = max(120, math.floor((shared_width * 25.4 / dpi) + 0.5))
+    shared_fbmm_height = max(90, math.floor((shared_height * 25.4 / dpi) + 0.5))
+    sunshine_fbmm_width = max(120, math.floor((sunshine_width * 25.4 / dpi) + 0.5))
+    sunshine_fbmm_height = max(90, math.floor((sunshine_height * 25.4 / dpi) + 0.5))
+    shared_display = values.get("JRMC_DISPLAY", "1")
+    sunshine_display = values.get("JRMC_SUNSHINE_DISPLAY", "2")
     return {
         "scale": scale,
-        "base_width": base_width,
-        "base_height": base_height,
-        "width": width,
-        "height": height,
+      "shared_base_width": shared_base_width,
+      "shared_base_height": shared_base_height,
+      "shared_width": shared_width,
+      "shared_height": shared_height,
+      "sunshine_width": sunshine_width,
+      "sunshine_height": sunshine_height,
         "dpi": dpi,
         "gdk_scale": gdk_scale,
         "gdk_dpi_scale": gdk_dpi_scale,
         "qt_scale_factor": qt_scale_factor,
         "cursor_size": cursor_size,
-        "fbmm_width": fbmm_width,
-        "fbmm_height": fbmm_height,
-        "shared_display": f":{display}",
+      "shared_fbmm_width": shared_fbmm_width,
+      "shared_fbmm_height": shared_fbmm_height,
+      "sunshine_fbmm_width": sunshine_fbmm_width,
+      "sunshine_fbmm_height": sunshine_fbmm_height,
+      "shared_display": f":{shared_display}",
+      "sunshine_display": f":{sunshine_display}",
         "home": values.get("JRMC_HOME", "/home/jriver"),
     }
 
@@ -728,11 +784,11 @@ def format_float(value: float) -> str:
 
 def emit_exports(profile: dict[str, float | int | str]) -> None:
     print(f'export JRMC_UI_SCALE_ACTIVE="{profile["scale"]}"')
-    print(f'export JRMC_SCALE_WIDTH="{profile["width"]}"')
-    print(f'export JRMC_SCALE_HEIGHT="{profile["height"]}"')
+    print(f'export JRMC_SCALE_WIDTH="{profile["shared_width"]}"')
+    print(f'export JRMC_SCALE_HEIGHT="{profile["shared_height"]}"')
     print(f'export JRMC_SCALE_DPI="{profile["dpi"]}"')
-    print(f'export JRMC_SCALE_FBMM_WIDTH="{profile["fbmm_width"]}"')
-    print(f'export JRMC_SCALE_FBMM_HEIGHT="{profile["fbmm_height"]}"')
+    print(f'export JRMC_SCALE_FBMM_WIDTH="{profile["shared_fbmm_width"]}"')
+    print(f'export JRMC_SCALE_FBMM_HEIGHT="{profile["shared_fbmm_height"]}"')
     print(f'export GDK_SCALE="{profile["gdk_scale"]}"')
     print(f'export GDK_DPI_SCALE="{format_float(float(profile["gdk_dpi_scale"]))}"')
     print(f'export QT_SCALE_FACTOR="{format_float(float(profile["qt_scale_factor"]))}"')
@@ -748,27 +804,36 @@ def apply_session(values: dict[str, str], profile: dict[str, float | int | str])
     env["DISPLAY"] = display
     env["XAUTHORITY"] = env.get("XAUTHORITY") or f'{profile["home"]}/.Xauthority'
 
+    if display == str(profile["sunshine_display"]):
+        fbmm_width = profile["sunshine_fbmm_width"]
+        fbmm_height = profile["sunshine_fbmm_height"]
+        geometry = f'{profile["sunshine_width"]}x{profile["sunshine_height"]}'
+    else:
+        fbmm_width = profile["shared_fbmm_width"]
+        fbmm_height = profile["shared_fbmm_height"]
+        geometry = f'{profile["shared_width"]}x{profile["shared_height"]}'
+
     resources = (
         f'Xft.dpi: {profile["dpi"]}\n'
         f'Xcursor.size: {profile["cursor_size"]}\n'
     )
     subprocess.run(["xrdb", "-quiet", "-merge", "-"], input=resources, text=True, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
     subprocess.run(["xrandr", "--dpi", str(profile["dpi"])], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-    subprocess.run(["xrandr", "--fbmm", f'{profile["fbmm_width"]}x{profile["fbmm_height"]}'], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-
-    if display == str(profile["shared_display"]):
-        geometry = f'{profile["width"]}x{profile["height"]}'
-        subprocess.run(["xrandr", "--fb", geometry], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-        subprocess.run(["xrandr", "--size", geometry], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    subprocess.run(["xrandr", "--fbmm", f'{fbmm_width}x{fbmm_height}'], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    subprocess.run(["xrandr", "--fb", geometry], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    subprocess.run(["xrandr", "--size", geometry], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
     return 0
+
+
 def print_summary(profile: dict[str, float | int | str]) -> None:
     print(f'ui-scale: {profile["scale"]}%')
-    print(f'vnc-framebuffer: {profile["width"]}x{profile["height"]} (base {profile["base_width"]}x{profile["base_height"]})')
+    print(f'vnc-framebuffer: {profile["shared_width"]}x{profile["shared_height"]} (base {profile["shared_base_width"]}x{profile["shared_base_height"]})')
+    print(f'sunshine-resolution: {profile["sunshine_width"]}x{profile["sunshine_height"]}')
     print(f'session-dpi: {profile["dpi"]}')
     print(f'gtk-hints: GDK_SCALE={profile["gdk_scale"]} GDK_DPI_SCALE={format_float(float(profile["gdk_dpi_scale"]))}')
     print(f'qt-hints: QT_SCALE_FACTOR={format_float(float(profile["qt_scale_factor"]))}')
-    print('client-guidance: VNC mode renders a larger server framebuffer as scale increases. Let noVNC scale the view to fit and prefer 100% / 1:1 scaling in TurboVNC Viewer or Remmina for the sharpest result.')
+    print('client-guidance: VNC mode renders a larger server framebuffer as scale increases. Sunshine keeps the configured server resolution exact and uses UI scale only for JRiver readability, DPI, and cursor sizing within that desktop.')
 
 
 def main() -> int:
@@ -780,10 +845,10 @@ def main() -> int:
         emit_exports(profile)
         return 0
     if action == "size":
-        print(f'{profile["width"]} {profile["height"]}')
+        print(f'{profile["shared_width"]} {profile["shared_height"]}')
         return 0
     if action == "geometry":
-        print(f'{profile["width"]}x{profile["height"]}')
+        print(f'{profile["shared_width"]}x{profile["shared_height"]}')
         return 0
     if action == "summary":
         print_summary(profile)
@@ -805,7 +870,7 @@ set -euo pipefail
 
 last_signature=""
 while true; do
-  signature="$(grep -E '^(JRMC_UI_SCALE|JRMC_WIDTH|JRMC_HEIGHT)=' /etc/default/jrmc 2>/dev/null | tr '\n' '|')"
+  signature="$(grep -E '^(JRMC_UI_SCALE|JRMC_WIDTH|JRMC_HEIGHT|JRMC_SUNSHINE_WIDTH|JRMC_SUNSHINE_HEIGHT)=' /etc/default/jrmc 2>/dev/null | tr '\n' '|')"
   if [[ "${signature}" != "${last_signature}" ]]; then
     /usr/local/bin/jrmc-scale-profile apply-session >/dev/null 2>&1 || true
     last_signature="${signature}"
@@ -894,7 +959,7 @@ PY
 }
 
 case "${target}" in
-  vnc|rdp)
+  vnc|rdp|sunshine)
     scale_value="$(target_scale "${target}")"
     write_setting "${scale_value}"
     printf '%s\n' "${scale_value}"
@@ -905,7 +970,7 @@ case "${target}" in
     fi
     ;;
   *)
-    echo "Usage: jrmc-app-scale {vnc|rdp|status}" >&2
+    echo "Usage: jrmc-app-scale {vnc|rdp|sunshine|status}" >&2
     exit 1
     ;;
 esac
@@ -974,6 +1039,14 @@ apply_sunshine_display_now() {
   fi
 }
 
+allowed_sunshine_resolution() {
+  local width="$1"
+  local height="$2"
+
+  [[ "${width}" =~ ^[0-9]+$ && "${height}" =~ ^[0-9]+$ ]] || return 1
+  (( width >= 640 && width <= 7680 && height >= 480 && height <= 4320 )) || return 1
+}
+
 restart_vnc_mode_if_active() {
   local active_mode=""
   active_mode="$(/usr/local/bin/jrmc-mode status 2>/dev/null | awk -F': ' '/^active-mode:/ {print $2; exit}')"
@@ -987,6 +1060,7 @@ restart_vnc_mode_if_active() {
 print_status() {
   /usr/local/bin/jrmc-scale-profile summary
   echo "jriver-app-scale: $(/usr/local/bin/jrmc-app-scale status 2>/dev/null || true)"
+  echo "configured-sunshine-resolution: ${JRMC_SUNSHINE_WIDTH:-1440}x${JRMC_SUNSHINE_HEIGHT:-900}"
   echo "shared-ui: $(systemctl is-active jrmc-ui.service 2>/dev/null || true)"
   echo "shared-vnc-backend: $(systemctl is-active jrmc-vnc.service 2>/dev/null || true)"
   echo "native-rdp: $(systemctl is-active xrdp.service 2>/dev/null || true)"
@@ -1026,6 +1100,29 @@ case "${action}" in
     fi
     echo "For the sharpest result, let noVNC fit the larger framebuffer and keep client-side scaling at 100% / 1:1 in TurboVNC Viewer or Remmina when using high JRMC scale presets."
     ;;
+  set-sunshine-resolution)
+    width="${2:-}"
+    height="${3:-}"
+    active_mode=""
+    if ! allowed_sunshine_resolution "${width}" "${height}"; then
+      echo "Usage: jrmc-scale set-sunshine-resolution <width 640-7680> <height 480-4320>" >&2
+      exit 1
+    fi
+    update_default JRMC_SUNSHINE_WIDTH "${width}"
+    update_default JRMC_SUNSHINE_HEIGHT "${height}"
+    source /etc/default/jrmc
+    /usr/local/bin/jrmc-sunshine-configure-display >/dev/null
+    active_mode="$(/usr/local/bin/jrmc-mode status 2>/dev/null | awk -F': ' '/^active-mode:/ {print $2; exit}')"
+    if [[ "${active_mode}" == "sunshine" ]]; then
+      /usr/local/bin/jrmc-mode sunshine >/dev/null
+      echo "Sunshine server resolution set to ${width}x${height}."
+      echo "Sunshine mode was restarted so Moonlight sees the new server-side desktop size immediately."
+    else
+      echo "Sunshine server resolution set to ${width}x${height}."
+      echo "The new server-side desktop size will take effect the next time Sunshine mode starts."
+    fi
+    echo "JRMC UI scale remains a separate control. It changes JRiver readability and session DPI without changing the configured Sunshine desktop resolution."
+    ;;
   status)
     print_status
     ;;
@@ -1034,7 +1131,7 @@ case "${action}" in
     echo "Reapplied JRMC scale hints to the shared display."
     ;;
   *)
-    echo "Usage: jrmc-scale {set <100|125|150|175|200>|status|apply-current}" >&2
+    echo "Usage: jrmc-scale {set <100|125|150|175|200>|set-sunshine-resolution <width> <height>|status|apply-current}" >&2
     exit 1
     ;;
 esac
@@ -2189,6 +2286,7 @@ case "${mode}" in
     echo "xrdp: $(systemctl is-active xrdp.service 2>/dev/null || true)"
     echo "jrmc-sunshine: $(systemctl is-active jrmc-sunshine.service 2>/dev/null || true)"
     echo "ui-scale: ${JRMC_UI_SCALE:-100}%"
+    echo "sunshine-resolution: ${JRMC_SUNSHINE_WIDTH:-1440}x${JRMC_SUNSHINE_HEIGHT:-900}"
     echo "gpu-enabled: ${JRMC_GPU_ENABLED:-no}"
     echo "gpu-selected-type: ${JRMC_GPU_SELECTED_TYPE:-auto}"
     echo "remote-audio-enabled: ${JRMC_REMOTE_AUDIO_ENABLED:-0}"
@@ -2355,6 +2453,8 @@ def read_params() -> dict[str, list[str]]:
 params = read_params()
 action = params.get("action", [""])[0]
 scale = params.get("ui_scale", [""])[0].strip()
+sunshine_width = params.get("sunshine_width", [""])[0].strip()
+sunshine_height = params.get("sunshine_height", [""])[0].strip()
 remote_audio_host = params.get("remote_audio_host", [""])[0].strip()
 remote_audio_port = params.get("remote_audio_port", [""])[0].strip()
 remote_audio_sink = params.get("remote_audio_sink", [""])[0].strip()
@@ -2391,6 +2491,11 @@ if action == "set-ui-scale":
     print("<html><body><h1>Invalid scale preset</h1><p><a href='/dashboard/'>Back</a></p></body></html>")
     raise SystemExit(0)
   command = ["sudo", "/usr/local/bin/jrmc-scale", "set", scale]
+elif action == "set-sunshine-resolution":
+  if not sunshine_width.isdigit() or not sunshine_height.isdigit():
+    print("<html><body><h1>Invalid Sunshine resolution</h1><p>Width and height must be whole numbers.</p><p><a href='/dashboard/'>Back</a></p></body></html>")
+    raise SystemExit(0)
+  command = ["sudo", "/usr/local/bin/jrmc-scale", "set-sunshine-resolution", sunshine_width, sunshine_height]
 elif action == "enable-remote-audio":
   if not remote_audio_host:
     print("<html><body><h1>Remote audio host is required</h1><p><a href='/dashboard/'>Back</a></p></body></html>")
@@ -2507,6 +2612,24 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
     <p>Switch into Sunshine mode first, then open Sunshine Status to confirm the admin URL, active render device, and input-device state. Use Open Sunshine Admin to reach the web UI on port <code>47990</code>, create Sunshine's separate admin account, and enter the pairing PIN from Moonlight. This mode is intended for GPU-enabled installs only.</p>
   </div>
   <div class="card">
+    <h2>Sunshine Resolution</h2>
+    <div class="stack">
+      <form class="scale-form" method="post" action="/cgi-bin/jrmc-control.py">
+        <input type="hidden" name="action" value="set-sunshine-resolution">
+        <label for="sunshine_width">Sunshine desktop width</label>
+        <input id="sunshine_width" name="sunshine_width" type="number" min="640" max="7680" step="1" placeholder="1440" required>
+        <label for="sunshine_height">Sunshine desktop height</label>
+        <input id="sunshine_height" name="sunshine_height" type="number" min="480" max="4320" step="1" placeholder="900" required>
+        <button type="submit">Apply Sunshine Resolution</button>
+      </form>
+      <div class="actions">
+        <a class="alt" href="/cgi-bin/jrmc-control.py?action=sunshine-status">Sunshine Status</a>
+      </div>
+    </div>
+    <p>Sunshine exposes a fixed server-side desktop size to Moonlight. Change the width and height here when you want Moonlight to see a different desktop resolution.</p>
+    <p>Use Sunshine Status to confirm the currently configured resolution. If Sunshine mode is already active, applying a new resolution restarts the Sunshine session so the new desktop size takes effect immediately.</p>
+  </div>
+  <div class="card">
     <h2>UI Scale</h2>
     <div class="stack">
       <form class="scale-form" method="post" action="/cgi-bin/jrmc-control.py">
@@ -2527,6 +2650,7 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
     </div>
     <p>Scale presets persist for future VNC, RDP, and Sunshine sessions. In VNC mode, larger presets request a larger server framebuffer so noVNC can scale it back down cleanly in the browser while JRiver keeps its own internal Standard View size at 1.</p>
     <p>In RDP and Sunshine mode, the same presets are translated into JRiver's internal Standard View size before the app launches, so 100% maps to 1, 125% to 1.25, 150% to 1.5, 175% to 1.75, and 200% to 2.</p>
+    <p>For Sunshine, UI Scale is separate from Sunshine Resolution. Sunshine Resolution controls the desktop size exposed to Moonlight, while UI Scale changes JRiver readability, DPI hints, and cursor sizing within that fixed desktop.</p>
     <p>For the sharpest result, let noVNC fit the view automatically and prefer 100% / 1:1 client-side scaling in TurboVNC Viewer or Remmina when using a larger JRMC scale preset.</p>
   </div>
   <div class="card">
