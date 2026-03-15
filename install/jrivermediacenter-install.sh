@@ -430,12 +430,78 @@ stop_pidfile "${JRMC_SUNSHINE_XORG_PIDFILE}"
 EOF
 chmod +x /usr/local/bin/jrmc-stop-sunshine-session
 
+cat <<'EOF' >/usr/local/bin/jrmc-sunshine-preset
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/default/jrmc
+
+action="${1:-current}"
+token="${2:-}"
+
+preset_record() {
+  case "${1:-}" in
+    1024x768) printf '%s\n' '1024x768|1024x768 - XGA (4:3)|28.0-96.0|48.0-75.0|262144|200000' ;;
+    1280x720) printf '%s\n' '1280x720|1280x720 - HD (16:9)|28.0-120.0|48.0-75.0|262144|220000' ;;
+    1280x800) printf '%s\n' '1280x800|1280x800 - WXGA (16:10)|28.0-120.0|48.0-75.0|262144|220000' ;;
+    1366x768) printf '%s\n' '1366x768|1366x768 - WXGA (16:9)|28.0-120.0|48.0-75.0|262144|240000' ;;
+    1440x900) printf '%s\n' '1440x900|1440x900 - WXGA+ (16:10)|28.0-160.0|48.0-75.0|512000|260000' ;;
+    1600x900) printf '%s\n' '1600x900|1600x900 - HD+ (16:9)|28.0-160.0|48.0-75.0|512000|280000' ;;
+    1920x1080) printf '%s\n' '1920x1080|1920x1080 - Full HD (16:9)|28.0-200.0|48.0-75.0|512000|350000' ;;
+    2560x1440) printf '%s\n' '2560x1440|2560x1440 - QHD (16:9)|28.0-260.0|48.0-75.0|786432|450000' ;;
+    3840x2160) printf '%s\n' '3840x2160|3840x2160 - 4K UHD (16:9)|28.0-320.0|48.0-75.0|1048576|650000' ;;
+    *) return 1 ;;
+  esac
+}
+
+case "${action}" in
+  list)
+    for token in \
+      1024x768 \
+      1280x720 \
+      1280x800 \
+      1366x768 \
+      1440x900 \
+      1600x900 \
+      1920x1080 \
+      2560x1440 \
+      3840x2160; do
+      IFS='|' read -r preset_token preset_label _rest <<<"$(preset_record "${token}")"
+      printf '%s|%s\n' "${preset_token}" "${preset_label}"
+    done
+    ;;
+  resolve)
+    preset_record "${token}"
+    ;;
+  current)
+    token="${JRMC_SUNSHINE_WIDTH:-1440}x${JRMC_SUNSHINE_HEIGHT:-900}"
+    if preset_record "${token}" >/dev/null 2>&1; then
+      printf '%s\n' "${token}"
+    else
+      printf 'custom:%s\n' "${token}"
+    fi
+    ;;
+  label)
+    if IFS='|' read -r preset_token preset_label _rest <<<"$(preset_record "${token}")"; then
+      printf '%s\n' "${preset_label}"
+    else
+      printf '%s\n' "${token}"
+    fi
+    ;;
+  *)
+    echo "Usage: jrmc-sunshine-preset {list|resolve <width>x<height>|current|label <width>x<height>}" >&2
+    exit 1
+    ;;
+esac
+EOF
+chmod +x /usr/local/bin/jrmc-sunshine-preset
+
 cat <<'EOF' >/usr/local/bin/jrmc-sunshine-status
 #!/usr/bin/env bash
 set -euo pipefail
 source /etc/default/jrmc
 
 adapter_name="$(awk -F= '/^[[:space:]]*adapter_name[[:space:]]*=/{sub(/^[[:space:]]+/, "", $2); sub(/[[:space:]]+$/, "", $2); print $2; exit}' "${JRMC_SUNSHINE_CONFIG_FILE}" 2>/dev/null || true)"
+configured_preset="$(/usr/local/bin/jrmc-sunshine-preset current 2>/dev/null || true)"
 active_resolution="$(runuser -u "${JRMC_USER}" -- env \
   HOME="${JRMC_HOME}" \
   USER="${JRMC_USER}" \
@@ -447,6 +513,7 @@ echo "sunshine-service: $(systemctl is-active jrmc-sunshine.service 2>/dev/null 
 echo "sunshine-config: ${JRMC_SUNSHINE_CONFIG_FILE}"
 echo "sunshine-apps: ${JRMC_SUNSHINE_APPS_FILE}"
 echo "sunshine-display: :${JRMC_SUNSHINE_DISPLAY}"
+echo "sunshine-preset: ${configured_preset:-custom:${JRMC_SUNSHINE_WIDTH:-1440}x${JRMC_SUNSHINE_HEIGHT:-900}}"
 echo "sunshine-resolution: ${JRMC_SUNSHINE_WIDTH:-1440}x${JRMC_SUNSHINE_HEIGHT:-900}"
 echo "sunshine-active-resolution: ${active_resolution:-unknown}"
 echo "sunshine-admin: https://$(hostname -I | awk '{print $1}'):${JRMC_SUNSHINE_WEB_PORT}/"
@@ -480,13 +547,37 @@ if (( width < 640 || width > 7680 || height < 480 || height > 4320 )); then
   exit 1
 fi
 
-modeline="$(cvt -r "${width}" "${height}" 60 2>/dev/null | awk '/^Modeline /{sub(/^Modeline[[:space:]]+/, ""); print; exit}')"
-if [[ -z "${modeline}" ]]; then
-  modeline="$(cvt "${width}" "${height}" 60 2>/dev/null | awk '/^Modeline /{sub(/^Modeline[[:space:]]+/, ""); print; exit}')"
+horizontal_sync="28.0-160.0"
+vertical_refresh="48.0-75.0"
+video_ram="512000"
+max_clock="350000"
+
+if preset_record="$(/usr/local/bin/jrmc-sunshine-preset resolve "${width}x${height}" 2>/dev/null || true)"; then
+  if [[ -n "${preset_record}" ]]; then
+    IFS='|' read -r _preset_token _preset_label horizontal_sync vertical_refresh video_ram max_clock <<<"${preset_record}"
+  fi
 fi
 
-if [[ -z "${modeline}" ]]; then
+modeline_output=""
+for modeline_generator in cvt xcvt; do
+  command -v "${modeline_generator}" >/dev/null 2>&1 || continue
+  modeline_output="$(${modeline_generator} -r "${width}" "${height}" 60 2>/dev/null | awk '/^Modeline /{print; exit}')"
+  [[ -n "${modeline_output}" ]] && break
+  modeline_output="$(${modeline_generator} "${width}" "${height}" 60 2>/dev/null | awk '/^Modeline /{print; exit}')"
+  [[ -n "${modeline_output}" ]] && break
+done
+
+if [[ -z "${modeline_output}" ]]; then
   echo "Unable to generate an Xorg modeline for Sunshine resolution ${width}x${height}." >&2
+  echo "Install cvt or xcvt support before starting Sunshine mode." >&2
+  exit 1
+fi
+
+mode_name="$(printf '%s\n' "${modeline_output}" | awk '{print $2}' | tr -d '"')"
+mode_body="$(printf '%s\n' "${modeline_output}" | sed -E 's/^Modeline[[:space:]]+"[^"]+"[[:space:]]+//')"
+
+if [[ -z "${mode_name}" || -z "${mode_body}" ]]; then
+  echo "Unable to parse the Xorg modeline for Sunshine resolution ${width}x${height}." >&2
   exit 1
 fi
 
@@ -500,15 +591,18 @@ EndSection
 
 Section "Monitor"
     Identifier "JRMCMonitor"
-    HorizSync 28.0-160.0
-    VertRefresh 48.0-120.0
-    Modeline ${modeline}
+  HorizSync ${horizontal_sync}
+  VertRefresh ${vertical_refresh}
+  Option "PreferredMode" "${mode_name}"
+  Option "MaxClock" "${max_clock}"
+  Modeline "${mode_name}" ${mode_body}
 EndSection
 
 Section "Device"
     Identifier "JRMCDevice"
     Driver "dummy"
-    VideoRam 512000
+  VideoRam ${video_ram}
+  Option "ConstantDPI" "true"
 EndSection
 
 Section "Screen"
@@ -518,7 +612,7 @@ Section "Screen"
     DefaultDepth 24
     SubSection "Display"
         Depth 24
-        Modes "${width}x${height}"
+      Modes "${mode_name}"
         Virtual ${width} ${height}
     EndSubSection
 EndSection
@@ -1060,6 +1154,7 @@ restart_vnc_mode_if_active() {
 print_status() {
   /usr/local/bin/jrmc-scale-profile summary
   echo "jriver-app-scale: $(/usr/local/bin/jrmc-app-scale status 2>/dev/null || true)"
+  echo "configured-sunshine-preset: $(/usr/local/bin/jrmc-sunshine-preset current 2>/dev/null || true)"
   echo "configured-sunshine-resolution: ${JRMC_SUNSHINE_WIDTH:-1440}x${JRMC_SUNSHINE_HEIGHT:-900}"
   echo "shared-ui: $(systemctl is-active jrmc-ui.service 2>/dev/null || true)"
   echo "shared-vnc-backend: $(systemctl is-active jrmc-vnc.service 2>/dev/null || true)"
@@ -1104,8 +1199,13 @@ case "${action}" in
     width="${2:-}"
     height="${3:-}"
     active_mode=""
+
+    if [[ -z "${height}" && "${width}" == *x* ]]; then
+      IFS='x' read -r width height <<<"${width}"
+    fi
+
     if ! allowed_sunshine_resolution "${width}" "${height}"; then
-      echo "Usage: jrmc-scale set-sunshine-resolution <width 640-7680> <height 480-4320>" >&2
+      echo "Usage: jrmc-scale set-sunshine-resolution <width>x<height> | <width 640-7680> <height 480-4320>" >&2
       exit 1
     fi
     update_default JRMC_SUNSHINE_WIDTH "${width}"
@@ -1131,7 +1231,7 @@ case "${action}" in
     echo "Reapplied JRMC scale hints to the shared display."
     ;;
   *)
-    echo "Usage: jrmc-scale {set <100|125|150|175|200>|set-sunshine-resolution <width> <height>|status|apply-current}" >&2
+    echo "Usage: jrmc-scale {set <100|125|150|175|200>|set-sunshine-resolution <width>x<height>|set-sunshine-resolution <width> <height>|status|apply-current}" >&2
     exit 1
     ;;
 esac
@@ -2286,6 +2386,7 @@ case "${mode}" in
     echo "xrdp: $(systemctl is-active xrdp.service 2>/dev/null || true)"
     echo "jrmc-sunshine: $(systemctl is-active jrmc-sunshine.service 2>/dev/null || true)"
     echo "ui-scale: ${JRMC_UI_SCALE:-100}%"
+    echo "sunshine-preset: $(/usr/local/bin/jrmc-sunshine-preset current 2>/dev/null || true)"
     echo "sunshine-resolution: ${JRMC_SUNSHINE_WIDTH:-1440}x${JRMC_SUNSHINE_HEIGHT:-900}"
     echo "gpu-enabled: ${JRMC_GPU_ENABLED:-no}"
     echo "gpu-selected-type: ${JRMC_GPU_SELECTED_TYPE:-auto}"
@@ -2453,11 +2554,24 @@ def read_params() -> dict[str, list[str]]:
 params = read_params()
 action = params.get("action", [""])[0]
 scale = params.get("ui_scale", [""])[0].strip()
+sunshine_resolution = params.get("sunshine_resolution", [""])[0].strip()
 sunshine_width = params.get("sunshine_width", [""])[0].strip()
 sunshine_height = params.get("sunshine_height", [""])[0].strip()
 remote_audio_host = params.get("remote_audio_host", [""])[0].strip()
 remote_audio_port = params.get("remote_audio_port", [""])[0].strip()
 remote_audio_sink = params.get("remote_audio_sink", [""])[0].strip()
+
+allowed_sunshine_resolutions = {
+  "1024x768",
+  "1280x720",
+  "1280x800",
+  "1366x768",
+  "1440x900",
+  "1600x900",
+  "1920x1080",
+  "2560x1440",
+  "3840x2160",
+}
 
 mapping = {
   "switch-vnc": ["sudo", "/usr/local/bin/jrmc-mode", "vnc"],
@@ -2492,10 +2606,16 @@ if action == "set-ui-scale":
     raise SystemExit(0)
   command = ["sudo", "/usr/local/bin/jrmc-scale", "set", scale]
 elif action == "set-sunshine-resolution":
-  if not sunshine_width.isdigit() or not sunshine_height.isdigit():
-    print("<html><body><h1>Invalid Sunshine resolution</h1><p>Width and height must be whole numbers.</p><p><a href='/dashboard/'>Back</a></p></body></html>")
-    raise SystemExit(0)
-  command = ["sudo", "/usr/local/bin/jrmc-scale", "set-sunshine-resolution", sunshine_width, sunshine_height]
+  if sunshine_resolution:
+    if sunshine_resolution not in allowed_sunshine_resolutions:
+      print("<html><body><h1>Invalid Sunshine preset</h1><p>Select one of the tested Sunshine resolutions from the list.</p><p><a href='/dashboard/'>Back</a></p></body></html>")
+      raise SystemExit(0)
+    command = ["sudo", "/usr/local/bin/jrmc-scale", "set-sunshine-resolution", sunshine_resolution]
+  else:
+    if not sunshine_width.isdigit() or not sunshine_height.isdigit():
+      print("<html><body><h1>Invalid Sunshine resolution</h1><p>Width and height must be whole numbers.</p><p><a href='/dashboard/'>Back</a></p></body></html>")
+      raise SystemExit(0)
+    command = ["sudo", "/usr/local/bin/jrmc-scale", "set-sunshine-resolution", sunshine_width, sunshine_height]
 elif action == "enable-remote-audio":
   if not remote_audio_host:
     print("<html><body><h1>Remote audio host is required</h1><p><a href='/dashboard/'>Back</a></p></body></html>")
@@ -2616,18 +2736,26 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
     <div class="stack">
       <form class="scale-form" method="post" action="/cgi-bin/jrmc-control.py">
         <input type="hidden" name="action" value="set-sunshine-resolution">
-        <label for="sunshine_width">Sunshine desktop width</label>
-        <input id="sunshine_width" name="sunshine_width" type="number" min="640" max="7680" step="1" placeholder="1440" required>
-        <label for="sunshine_height">Sunshine desktop height</label>
-        <input id="sunshine_height" name="sunshine_height" type="number" min="480" max="4320" step="1" placeholder="900" required>
+        <label for="sunshine_resolution">Tested Sunshine desktop resolution</label>
+        <select id="sunshine_resolution" name="sunshine_resolution">
+          <option value="1024x768">1024x768 — XGA</option>
+          <option value="1280x720">1280x720 — HD</option>
+          <option value="1280x800">1280x800 — WXGA</option>
+          <option value="1366x768">1366x768 — WXGA</option>
+          <option value="1440x900" selected>1440x900 — WXGA+</option>
+          <option value="1600x900">1600x900 — HD+</option>
+          <option value="1920x1080">1920x1080 — Full HD</option>
+          <option value="2560x1440">2560x1440 — QHD</option>
+          <option value="3840x2160">3840x2160 — 4K UHD</option>
+        </select>
         <button type="submit">Apply Sunshine Resolution</button>
       </form>
       <div class="actions">
         <a class="alt" href="/cgi-bin/jrmc-control.py?action=sunshine-status">Sunshine Status</a>
       </div>
     </div>
-    <p>Sunshine exposes a fixed server-side desktop size to Moonlight. Change the width and height here when you want Moonlight to see a different desktop resolution.</p>
-    <p>Use Sunshine Status to confirm the currently configured resolution. If Sunshine mode is already active, applying a new resolution restarts the Sunshine session so the new desktop size takes effect immediately.</p>
+    <p>Sunshine exposes a fixed server-side desktop size to Moonlight. Choose one of these tested dummy-display presets when you want Moonlight to see a different desktop resolution.</p>
+    <p>Use Sunshine Status to confirm the configured preset and the active Xorg mode. If Sunshine mode is already active, applying a new preset restarts the Sunshine session so the new desktop size takes effect immediately.</p>
   </div>
   <div class="card">
     <h2>UI Scale</h2>
