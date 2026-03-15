@@ -14,6 +14,10 @@ CONFIG_DIR="/etc/jrmc"
 RUNTIME_DIR="${APP_HOME}/.cache/jrmc"
 WEB_ROOT="/usr/share/jrmc-web"
 CGI_BIN="/usr/lib/cgi-bin"
+TURBOVNC_VERSION="3.3"
+TURBOVNC_DEB="turbovnc_${TURBOVNC_VERSION}_amd64.deb"
+TURBOVNC_URL="https://github.com/TurboVNC/turbovnc/releases/download/${TURBOVNC_VERSION}/${TURBOVNC_DEB}"
+TURBOVNC_DIR="/opt/TurboVNC"
 JRMC_DISPLAY=1
 JRMC_VNC_PORT=5900
 JRMC_NATIVE_RDP_PORT=3389
@@ -49,7 +53,6 @@ $STD apt install -y \
   pulseaudio-utils \
   python3 \
   ssl-cert \
-  tigervnc-standalone-server \
   websockify \
   x11-utils \
   x11-xserver-utils \
@@ -59,6 +62,12 @@ $STD apt install -y \
   xrdp \
   sudo
 msg_ok "Installed Dependencies"
+
+msg_info "Installing TurboVNC"
+curl -fsSL "${TURBOVNC_URL}" -o "/tmp/${TURBOVNC_DEB}"
+$STD apt install -y "/tmp/${TURBOVNC_DEB}"
+rm -f "/tmp/${TURBOVNC_DEB}"
+msg_ok "Installed TurboVNC"
 
 msg_info "Creating Service User"
 if ! id -u "${APP_USER}" >/dev/null 2>&1; then
@@ -81,7 +90,7 @@ install -d -m 700 -o "${APP_USER}" -g "${APP_USER}" \
   "${APP_HOME}/.cache" \
   "${APP_HOME}/.config" \
   "${RUNTIME_DIR}" \
-  "${APP_HOME}/.config/tigervnc"
+  "${APP_HOME}/.config/turbovnc"
 install -d -m 755 "${CONFIG_DIR}" "${WEB_ROOT}" "${WEB_ROOT}/setup" "${WEB_ROOT}/dashboard" "${CGI_BIN}"
 make-ssl-cert generate-default-snakeoil --force-overwrite >/dev/null 2>&1 || true
 cat <<EOF >/etc/default/jrmc
@@ -105,6 +114,7 @@ JRMC_REMOTE_AUDIO_SINK=""
 JRMC_WEB_HTPASSWD="/etc/nginx/jrmc.htpasswd"
 JRMC_VNC_PASSWD_FILE="${CONFIG_DIR}/vncpasswd"
 JRMC_BOOTSTRAP_FILE="${CONFIG_DIR}/bootstrap-complete"
+JRMC_TURBOVNC_DIR="${TURBOVNC_DIR}"
 JRMC_NATIVE_RDP_ENABLED="0"
 JRMC_NATIVE_RDP_USER="${APP_USER}"
 JRMC_RUNTIME_DIR="${RUNTIME_DIR}"
@@ -138,7 +148,7 @@ print(''.join(secrets.choice(alphabet) for _ in range(32)))
 PY
 )
 htpasswd -b -c -5 /etc/nginx/jrmc.htpasswd disabled "${tmp_password}" >/dev/null 2>&1
-printf '%s\n' "${tmp_password}" | tigervncpasswd -f >"${CONFIG_DIR}/vncpasswd"
+printf '%s\n' "${tmp_password}" | "${TURBOVNC_DIR}/bin/vncpasswd" -f >"${CONFIG_DIR}/vncpasswd"
 chown root:www-data /etc/nginx/jrmc.htpasswd
 chmod 0640 /etc/nginx/jrmc.htpasswd
 chown "${APP_USER}:${APP_USER}" "${CONFIG_DIR}/vncpasswd"
@@ -166,20 +176,25 @@ args=(
   -geometry "${jrmc_scale_width}x${jrmc_scale_height}"
   -depth 24
   -rfbport "${JRMC_VNC_PORT}"
-  -AlwaysShared
-  -NeverShared=0
-  -SecurityTypes TLSVnc,VncAuth
+  -alwaysshared
+  -securitytypes TLSVnc,VNC
   -desktop "JRiver Media Center"
   -auth "${HOME}/.Xauthority"
-  -PasswordFile "${JRMC_VNC_PASSWD_FILE}"
-  -IdleTimeout 0
-  -MaxConnectionTime 0
-  -MaxDisconnectionTime 0
-  -MaxIdleTime 0
-  -AcceptSetDesktopSize=1
+  -rfbauth "${JRMC_VNC_PASSWD_FILE}"
+  -idletimeout 0
 )
 
-exec /usr/bin/Xtigervnc "${args[@]}"
+if [[ "${JRMC_GPU_ENABLED:-no}" == "yes" ]]; then
+  for render_node in /dev/dri/renderD*; do
+    [[ -e "${render_node}" ]] || continue
+    if [[ -r "${render_node}" && -w "${render_node}" ]]; then
+      args+=( -drinode "${render_node}" )
+      break
+    fi
+  done
+fi
+
+exec "${JRMC_TURBOVNC_DIR}/bin/Xvnc" "${args[@]}"
 EOF
 chmod +x /usr/local/bin/jrmc-vnc-start
 
@@ -311,7 +326,7 @@ def print_summary(profile: dict[str, float | int | str]) -> None:
     print(f'session-dpi: {profile["dpi"]}')
     print(f'gtk-hints: GDK_SCALE={profile["gdk_scale"]} GDK_DPI_SCALE={format_float(float(profile["gdk_dpi_scale"]))}')
     print(f'qt-hints: QT_SCALE_FACTOR={format_float(float(profile["qt_scale_factor"]))}')
-    print('client-guidance: VNC mode renders a larger server framebuffer as scale increases. Let noVNC scale the view to fit and prefer 100% / 1:1 scaling in TigerVNC and Remmina for the sharpest result.')
+    print('client-guidance: VNC mode renders a larger server framebuffer as scale increases. Let noVNC scale the view to fit and prefer 100% / 1:1 scaling in TurboVNC Viewer or Remmina for the sharpest result.')
 
 
 def main() -> int:
@@ -548,7 +563,7 @@ case "${action}" in
     if systemctl is-active --quiet xrdp.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_RDP_PIDFILE}" >/dev/null 2>&1; then
       echo "If an RDP JRiver session is already running, reconnect so the app relaunches with the updated JRiver internal scale."
     fi
-    echo "For the sharpest result, let noVNC fit the larger framebuffer and keep client-side scaling at 100% / 1:1 in TigerVNC or Remmina when using high JRMC scale presets."
+    echo "For the sharpest result, let noVNC fit the larger framebuffer and keep client-side scaling at 100% / 1:1 in TurboVNC Viewer or Remmina when using high JRMC scale presets."
     ;;
   status)
     print_status
@@ -1416,7 +1431,7 @@ if [[ -z "${password}" ]]; then
 fi
 
 install -d -m 700 -o "${JRMC_USER}" -g "${JRMC_USER}" "$(dirname "${JRMC_VNC_PASSWD_FILE}")"
-printf '%s\n' "${password}" | tigervncpasswd -f >"${JRMC_VNC_PASSWD_FILE}"
+printf '%s\n' "${password}" | "${JRMC_TURBOVNC_DIR}/bin/vncpasswd" -f >"${JRMC_VNC_PASSWD_FILE}"
 chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_VNC_PASSWD_FILE}"
 chmod 0600 "${JRMC_VNC_PASSWD_FILE}"
 EOF
@@ -1527,7 +1542,7 @@ Password: ${password}
 
 Default mode: Media Server
 Modes: choose Media Server, VNC, or RDP from Dashboard or jrmc-mode.
-VNC mode: browser noVNC and direct VNC on port ${JRMC_VNC_PORT} run together against the same JRMC session through one Xtigervnc backend.
+VNC mode: browser noVNC and direct VNC on port ${JRMC_VNC_PORT} run together against the same JRMC session through one TurboVNC backend.
 VNC authentication: after Dashboard sign-in, use the same Dashboard password when noVNC or a native VNC client prompts for the VNC password.
 RDP mode: native RDP on port ${JRMC_NATIVE_RDP_PORT} for Remmina using the same username and password as Dashboard.
 UI Scale: set 100%-200% presets from Dashboard or jrmc-scale; active sessions update best-effort.
@@ -1812,7 +1827,7 @@ subprocess.run(["sudo", "/usr/local/bin/jrmc-set-web-credentials", username, pas
 respond(
     "<html><body><h1>JRMC web access configured</h1>"
     "<p>Open <a href='/dashboard/'>Dashboard</a> and sign in with the credentials you just created.</p>"
-  "<p>The container starts in Media Server mode. Use Dashboard to switch between Media Server, VNC, and RDP as needed.</p>"
+    "<p>The container starts in Media Server mode. Use Dashboard to switch between Media Server, VNC, and RDP as needed.</p>"
     "</body></html>"
 )
 EOF
@@ -1914,7 +1929,7 @@ cat <<'EOF' >${WEB_ROOT}/setup/index.html
 <body>
   <div class="card">
     <h1>JRiver Media Center Web Setup</h1>
-    <p>Create the initial noVNC dashboard account. Browser access is protected by HTTPS with a self-signed certificate and HTTP basic auth.</p>
+    <p>Create the initial JRMC dashboard account. Browser access is protected by HTTPS with a self-signed certificate and HTTP basic auth.</p>
     <form method="post" action="/cgi-bin/jrmc-setup.py">
       <label>Username</label>
       <input name="username" minlength="3" maxlength="32" required>
@@ -1969,7 +1984,7 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=switch-vnc">Start VNC Mode</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=mode-status">Mode Status</a>
     </div>
-    <p>Browser noVNC and direct VNC both connect to the same Xtigervnc server. Direct VNC listens on port <code>5900</code>, and both paths use the same VNC password derived from your Dashboard password.</p>
+    <p>Browser noVNC and direct VNC both connect to the same TurboVNC server. Direct VNC listens on port <code>5900</code>, and both paths use the same VNC password derived from your Dashboard password.</p>
     <p>Both VNC transports always point to the same JRMC session. Switching to <strong>RDP</strong> or <strong>Media Server</strong> cleanly tears down VNC mode first.</p>
   </div>
   <div class="card">
@@ -1998,7 +2013,7 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
     </div>
     <p>Scale presets persist for future VNC and RDP sessions. In VNC mode, larger presets request a larger server framebuffer so noVNC can scale it back down cleanly in the browser while JRiver keeps its own internal Standard View size at 1.</p>
     <p>In RDP mode, the same presets are translated into JRiver's internal Standard View size before the app launches, so 100% maps to 1, 125% to 1.25, 150% to 1.5, 175% to 1.75, and 200% to 2.</p>
-    <p>For the sharpest result, let noVNC fit the view automatically and prefer 100% / 1:1 client-side scaling in TigerVNC and Remmina when using a larger JRMC scale preset.</p>
+    <p>For the sharpest result, let noVNC fit the view automatically and prefer 100% / 1:1 client-side scaling in TurboVNC Viewer or Remmina when using a larger JRMC scale preset.</p>
   </div>
   <div class="card">
     <h2>Remote Audio</h2>
@@ -2140,7 +2155,7 @@ fi
 
 cat <<EOF >/etc/systemd/system/jrmc-vnc.service
 [Unit]
-Description=JRiver Media Center shared Xtigervnc backend
+Description=JRiver Media Center shared TurboVNC backend
 After=network.target
 
 [Service]
@@ -2226,7 +2241,7 @@ echo "==================================="
 echo
 echo "Web setup URL:        https://<container-ip>:5800/setup/"
 echo "Default mode:         Media Server"
-echo "VNC mode:             Browser noVNC plus direct VNC on port 5900 through one Xtigervnc server"
+echo "VNC mode:             Browser noVNC plus direct VNC on port 5900 through one TurboVNC server"
 echo "UI Scale:             Presets 100/125/150/175/200 via Dashboard or jrmc-scale"
 echo "RDP mode:             Port 3389 for Remmina using the same Dashboard username; switching modes tears down the others first"
 echo "GPU passthrough:      Validate with jrmc-gpu-status and jrmc-gpu-test when enabled at install time"
