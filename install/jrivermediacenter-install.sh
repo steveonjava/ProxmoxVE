@@ -616,6 +616,7 @@ wait "${sunshine_pid}"
 EOF
 chmod +x /usr/local/bin/jrmc-sunshine-start
 
+mkdir -p /etc/X11
 cat <<EOF >/etc/X11/jrmc-sunshine-xorg.conf
 Section "ServerFlags"
     Option "DontVTSwitch" "true"
