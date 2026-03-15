@@ -18,11 +18,18 @@ TURBOVNC_VERSION="3.3"
 TURBOVNC_DEB="turbovnc_${TURBOVNC_VERSION}_amd64.deb"
 TURBOVNC_URL="https://github.com/TurboVNC/turbovnc/releases/download/${TURBOVNC_VERSION}/${TURBOVNC_DEB}"
 TURBOVNC_DIR="/opt/TurboVNC"
+SUNSHINE_VERSION="2025.924.154138"
+SUNSHINE_DEB="sunshine-debian-trixie-amd64.deb"
+SUNSHINE_URL="https://github.com/LizardByte/Sunshine/releases/download/v${SUNSHINE_VERSION}/${SUNSHINE_DEB}"
+SUNSHINE_CONFIG_DIR="${APP_HOME}/.config/sunshine"
 JRMC_DISPLAY=1
+JRMC_SUNSHINE_DISPLAY=2
 JRMC_VNC_PORT=5900
 JRMC_NATIVE_RDP_PORT=3389
 JRMC_WEBSOCKIFY_PORT=6080
 JRMC_WEB_PORT=5800
+JRMC_SUNSHINE_PORT=47989
+JRMC_SUNSHINE_WEB_PORT=47990
 
 color
 verb_ip6
@@ -34,7 +41,21 @@ update_os
 msg_custom "ℹ️" "${GN}" "If GPU passthrough is enabled, JRiver will install guest-side acceleration libraries and validation tools"
 setup_hwaccel
 
-if [[ "${ENABLE_GPU:-no}" == "yes" ]]; then
+gpu_device_visible="no"
+for gpu_node in /dev/dri/renderD* /dev/kfd /dev/nvidiactl; do
+  [[ -e "${gpu_node}" ]] || continue
+  gpu_device_visible="yes"
+  break
+done
+
+gpu_enabled_state="${ENABLE_GPU:-no}"
+if [[ "${gpu_enabled_state}" != "yes" && "${gpu_device_visible}" == "yes" ]]; then
+  gpu_enabled_state="yes"
+fi
+
+gpu_selected_type="${GPU_TYPE:-}"
+
+if [[ "${gpu_enabled_state}" == "yes" ]]; then
   msg_info "Installing GPU Validation Tools"
   $STD apt install -y ffmpeg pciutils >/dev/null 2>&1
   msg_ok "Installed GPU Validation Tools"
@@ -47,6 +68,8 @@ $STD apt install -y \
   dbus-x11 \
   fcgiwrap \
   libasound2-plugins \
+  libgbm1 \
+  mesa-utils \
   nginx \
   novnc \
   openbox \
@@ -58,6 +81,9 @@ $STD apt install -y \
   x11-xserver-utils \
   xauth \
   xdotool \
+  xserver-xorg-core \
+  xserver-xorg-input-libinput \
+  xserver-xorg-video-dummy \
   xorgxrdp \
   xrdp \
   sudo
@@ -69,12 +95,18 @@ $STD apt install -y "/tmp/${TURBOVNC_DEB}"
 rm -f "/tmp/${TURBOVNC_DEB}"
 msg_ok "Installed TurboVNC"
 
+msg_info "Installing Sunshine"
+curl -fsSL "${SUNSHINE_URL}" -o "/tmp/${SUNSHINE_DEB}"
+$STD apt install -y "/tmp/${SUNSHINE_DEB}"
+rm -f "/tmp/${SUNSHINE_DEB}"
+msg_ok "Installed Sunshine"
+
 msg_info "Creating Service User"
 if ! id -u "${APP_USER}" >/dev/null 2>&1; then
   useradd -m -d "${APP_HOME}" -s /bin/bash "${APP_USER}"
 fi
-if [[ "${ENABLE_GPU:-no}" == "yes" ]]; then
-  for gpu_group in render video; do
+if [[ "${gpu_enabled_state}" == "yes" ]]; then
+  for gpu_group in input render video; do
     if getent group "${gpu_group}" >/dev/null 2>&1; then
       usermod -aG "${gpu_group}" "${APP_USER}" >/dev/null 2>&1 || true
     fi
@@ -90,23 +122,28 @@ install -d -m 700 -o "${APP_USER}" -g "${APP_USER}" \
   "${APP_HOME}/.cache" \
   "${APP_HOME}/.config" \
   "${RUNTIME_DIR}" \
-  "${APP_HOME}/.config/turbovnc"
+  "${APP_HOME}/.config/turbovnc" \
+  "${SUNSHINE_CONFIG_DIR}" \
+  "${SUNSHINE_CONFIG_DIR}/credentials"
 install -d -m 755 "${CONFIG_DIR}" "${WEB_ROOT}" "${WEB_ROOT}/setup" "${WEB_ROOT}/dashboard" "${CGI_BIN}"
 make-ssl-cert generate-default-snakeoil --force-overwrite >/dev/null 2>&1 || true
 cat <<EOF >/etc/default/jrmc
 JRMC_USER="${APP_USER}"
 JRMC_HOME="${APP_HOME}"
 JRMC_DISPLAY="${JRMC_DISPLAY}"
+JRMC_SUNSHINE_DISPLAY="${JRMC_SUNSHINE_DISPLAY}"
 JRMC_VNC_PORT="${JRMC_VNC_PORT}"
 JRMC_NATIVE_RDP_PORT="${JRMC_NATIVE_RDP_PORT}"
 JRMC_WEBSOCKIFY_PORT="${JRMC_WEBSOCKIFY_PORT}"
 JRMC_WEB_PORT="${JRMC_WEB_PORT}"
+JRMC_SUNSHINE_PORT="${JRMC_SUNSHINE_PORT}"
+JRMC_SUNSHINE_WEB_PORT="${JRMC_SUNSHINE_WEB_PORT}"
 JRMC_WIDTH="1440"
 JRMC_HEIGHT="900"
 JRMC_UI_SCALE="100"
 JRMC_MODE="mediaserver"
-JRMC_GPU_ENABLED="${ENABLE_GPU:-no}"
-JRMC_GPU_SELECTED_TYPE="${GPU_TYPE:-}"
+JRMC_GPU_ENABLED="${gpu_enabled_state}"
+JRMC_GPU_SELECTED_TYPE="${gpu_selected_type}"
 JRMC_REMOTE_AUDIO_ENABLED="0"
 JRMC_REMOTE_AUDIO_HOST=""
 JRMC_REMOTE_AUDIO_PORT="4713"
@@ -118,9 +155,18 @@ JRMC_TURBOVNC_DIR="${TURBOVNC_DIR}"
 JRMC_NATIVE_RDP_ENABLED="0"
 JRMC_NATIVE_RDP_USER="${APP_USER}"
 JRMC_RUNTIME_DIR="${RUNTIME_DIR}"
+JRMC_SUNSHINE_CONFIG_DIR="${SUNSHINE_CONFIG_DIR}"
+JRMC_SUNSHINE_CONFIG_FILE="${SUNSHINE_CONFIG_DIR}/sunshine.conf"
+JRMC_SUNSHINE_APPS_FILE="${SUNSHINE_CONFIG_DIR}/apps.json"
+JRMC_SUNSHINE_XAUTHORITY="${RUNTIME_DIR}/sunshine.Xauthority"
 JRMC_UI_PIDFILE="${RUNTIME_DIR}/ui.pid"
 JRMC_RDP_PIDFILE="${RUNTIME_DIR}/rdp.pid"
 JRMC_RDP_OPENBOX_PIDFILE="${RUNTIME_DIR}/rdp-openbox.pid"
+JRMC_SUNSHINE_PIDFILE="${RUNTIME_DIR}/sunshine.pid"
+JRMC_SUNSHINE_XORG_PIDFILE="${RUNTIME_DIR}/sunshine-xorg.pid"
+JRMC_SUNSHINE_OPENBOX_PIDFILE="${RUNTIME_DIR}/sunshine-openbox.pid"
+JRMC_SUNSHINE_SCALE_PIDFILE="${RUNTIME_DIR}/sunshine-scale.pid"
+JRMC_SUNSHINE_UI_PIDFILE="${RUNTIME_DIR}/sunshine-ui.pid"
 EOF
 chmod 0644 /etc/default/jrmc
 msg_ok "Prepared Runtime Directories"
@@ -153,6 +199,67 @@ chown root:www-data /etc/nginx/jrmc.htpasswd
 chmod 0640 /etc/nginx/jrmc.htpasswd
 chown "${APP_USER}:${APP_USER}" "${CONFIG_DIR}/vncpasswd"
 chmod 0600 "${CONFIG_DIR}/vncpasswd"
+
+sunshine_encoder="vaapi"
+if [[ "${GPU_TYPE:-}" == "nvidia" ]]; then
+  sunshine_encoder="nvenc"
+fi
+
+sunshine_adapter_name=""
+if [[ "${sunshine_encoder}" == "vaapi" ]]; then
+  for render_node in /dev/dri/renderD*; do
+    [[ -e "${render_node}" ]] || continue
+    if [[ -r "${render_node}" && -w "${render_node}" ]]; then
+      sunshine_adapter_name="${render_node}"
+      break
+    fi
+  done
+fi
+
+cat <<EOF >"${SUNSHINE_CONFIG_DIR}/sunshine.conf"
+sunshine_name = JRiver Media Center
+min_log_level = info
+system_tray = disabled
+upnp = disabled
+address_family = ipv4
+origin_web_ui_allowed = lan
+port = ${JRMC_SUNSHINE_PORT}
+file_apps = ${SUNSHINE_CONFIG_DIR}/apps.json
+credentials_file = sunshine_state.json
+log_path = sunshine.log
+capture = x11
+encoder = ${sunshine_encoder}
+EOF
+if [[ -n "${sunshine_adapter_name}" ]]; then
+  echo "adapter_name = ${sunshine_adapter_name}" >>"${SUNSHINE_CONFIG_DIR}/sunshine.conf"
+fi
+cat <<EOF >"${SUNSHINE_CONFIG_DIR}/apps.json"
+{
+  "env": {
+    "HOME": "${APP_HOME}",
+    "USER": "${APP_USER}",
+    "DISPLAY": ":${JRMC_SUNSHINE_DISPLAY}",
+    "XAUTHORITY": "${RUNTIME_DIR}/sunshine.Xauthority"
+  },
+  "apps": [
+    {
+      "name": "Desktop"
+    },
+    {
+      "name": "JRiver Media Center",
+      "cmd": "/usr/local/bin/jrmc-sunshine-launch",
+      "working-dir": "${APP_HOME}",
+      "exclude-global-prep-cmd": false,
+      "auto-detach": false,
+      "wait-all": true,
+      "exit-timeout": 5
+    }
+  ]
+}
+EOF
+chown -R "${APP_USER}:${APP_USER}" "${SUNSHINE_CONFIG_DIR}"
+chmod 0700 "${SUNSHINE_CONFIG_DIR}"
+chmod 0600 "${SUNSHINE_CONFIG_DIR}/sunshine.conf" "${SUNSHINE_CONFIG_DIR}/apps.json"
 
 cat <<'EOF' >/usr/local/bin/jrmc-vnc-start
 #!/usr/bin/env bash
@@ -215,6 +322,337 @@ fi
 nohup /usr/bin/openbox >/tmp/jrmc-openbox.log 2>&1 &
 EOF
 chmod +x /usr/local/bin/jrmc-openbox-start
+
+cat <<'EOF' >/usr/local/bin/jrmc-sunshine-ready
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/default/jrmc
+
+have_gpu_device=no
+for gpu_node in /dev/dri/renderD* /dev/kfd /dev/nvidiactl; do
+  [[ -e "${gpu_node}" ]] || continue
+  have_gpu_device=yes
+  break
+done
+
+if ! command -v sunshine >/dev/null 2>&1; then
+  echo "Sunshine binary is not installed." >&2
+  exit 1
+fi
+
+if ! command -v Xorg >/dev/null 2>&1; then
+  echo "Xorg is not installed." >&2
+  exit 1
+fi
+
+if [[ "${have_gpu_device}" != "yes" ]]; then
+  echo "No GPU device nodes are visible to the container." >&2
+  exit 1
+fi
+EOF
+chmod +x /usr/local/bin/jrmc-sunshine-ready
+
+cat <<'EOF' >/usr/local/bin/jrmc-sunshine-launch
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/default/jrmc
+
+export HOME="${JRMC_HOME}"
+export USER="${JRMC_USER}"
+export DISPLAY=":${JRMC_SUNSHINE_DISPLAY}"
+export XAUTHORITY="${JRMC_SUNSHINE_XAUTHORITY}"
+eval "$(/usr/local/bin/jrmc-scale-profile exports)"
+
+if /usr/local/bin/jrmc-pidfile-active "${JRMC_SUNSHINE_UI_PIDFILE}" >/dev/null 2>&1; then
+  echo "A Sunshine JRMC session is already running." >&2
+  exit 1
+fi
+
+for _i in $(seq 1 30); do
+  xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1 && break
+  sleep 0.5
+done
+
+/usr/local/bin/jrmc-openbox-start
+/usr/local/bin/jrmc-scale-profile apply-session >/dev/null 2>&1 || true
+/usr/local/bin/jrmc-app-scale sunshine >/dev/null 2>&1 || true
+
+cleanup() {
+  rm -f "${JRMC_SUNSHINE_UI_PIDFILE}"
+}
+trap cleanup EXIT
+
+/usr/bin/mediacenter35 &
+app_pid=$!
+printf '%s\n' "${app_pid}" >"${JRMC_SUNSHINE_UI_PIDFILE}"
+/usr/local/bin/jrmc-window-fit "${app_pid}" >/dev/null 2>&1 &
+wait "${app_pid}"
+EOF
+chmod +x /usr/local/bin/jrmc-sunshine-launch
+
+cat <<'EOF' >/usr/local/bin/jrmc-stop-sunshine-session
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/default/jrmc
+
+stop_pidfile() {
+  local pidfile="$1"
+  local pid
+  if ! pid="$(/usr/local/bin/jrmc-pidfile-active "${pidfile}" 2>/dev/null)"; then
+    rm -f "${pidfile}"
+    return 0
+  fi
+
+  kill -TERM "${pid}" >/dev/null 2>&1 || true
+  for _i in $(seq 1 20); do
+    if ! kill -0 "${pid}" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.5
+  done
+  kill -KILL "${pid}" >/dev/null 2>&1 || true
+  rm -f "${pidfile}"
+}
+
+stop_pidfile "${JRMC_SUNSHINE_UI_PIDFILE}"
+stop_pidfile "${JRMC_SUNSHINE_SCALE_PIDFILE}"
+stop_pidfile "${JRMC_SUNSHINE_OPENBOX_PIDFILE}"
+stop_pidfile "${JRMC_SUNSHINE_PIDFILE}"
+stop_pidfile "${JRMC_SUNSHINE_XORG_PIDFILE}"
+EOF
+chmod +x /usr/local/bin/jrmc-stop-sunshine-session
+
+cat <<'EOF' >/usr/local/bin/jrmc-sunshine-status
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/default/jrmc
+
+adapter_name="$(awk -F= '/^[[:space:]]*adapter_name[[:space:]]*=/{sub(/^[[:space:]]+/, "", $2); sub(/[[:space:]]+$/, "", $2); print $2; exit}' "${JRMC_SUNSHINE_CONFIG_FILE}" 2>/dev/null || true)"
+
+echo "sunshine-service: $(systemctl is-active jrmc-sunshine.service 2>/dev/null || true)"
+echo "sunshine-config: ${JRMC_SUNSHINE_CONFIG_FILE}"
+echo "sunshine-apps: ${JRMC_SUNSHINE_APPS_FILE}"
+echo "sunshine-display: :${JRMC_SUNSHINE_DISPLAY}"
+echo "sunshine-admin: https://$(hostname -I | awk '{print $1}'):${JRMC_SUNSHINE_WEB_PORT}/"
+echo "moonlight-host: $(hostname -I | awk '{print $1}')"
+echo "sunshine-pid: $(/usr/local/bin/jrmc-pidfile-active "${JRMC_SUNSHINE_PIDFILE}" 2>/dev/null || true)"
+echo "sunshine-xorg-pid: $(/usr/local/bin/jrmc-pidfile-active "${JRMC_SUNSHINE_XORG_PIDFILE}" 2>/dev/null || true)"
+echo "sunshine-ui-pid: $(/usr/local/bin/jrmc-pidfile-active "${JRMC_SUNSHINE_UI_PIDFILE}" 2>/dev/null || true)"
+echo "sunshine-adapter: ${adapter_name:-auto}"
+echo "sunshine-adapter-present: $([[ -n "${adapter_name}" && -e "${adapter_name}" ]] && echo yes || echo no)"
+echo "sunshine-adapter-rw: $([[ -n "${adapter_name}" && -r "${adapter_name}" && -w "${adapter_name}" ]] && echo yes || echo no)"
+echo "uinput-present: $([[ -e /dev/uinput ]] && echo yes || echo no)"
+echo "uinput-jriver-rw: $(runuser -u "${JRMC_USER}" -- test -r /dev/uinput -a -w /dev/uinput && echo yes || echo no)"
+EOF
+chmod +x /usr/local/bin/jrmc-sunshine-status
+
+cat <<'EOF' >/usr/local/bin/jrmc-sunshine-start
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/default/jrmc
+
+/usr/local/bin/jrmc-sunshine-ready
+
+if grep -Eq '^[[:space:]]*encoder[[:space:]]*=[[:space:]]*vaapi([[:space:]]*#.*)?$' "${JRMC_SUNSHINE_CONFIG_FILE}"; then
+  sunshine_adapter_name="$(awk -F= '/^[[:space:]]*adapter_name[[:space:]]*=/{sub(/^[[:space:]]+/, "", $2); sub(/[[:space:]]+$/, "", $2); print $2; exit}' "${JRMC_SUNSHINE_CONFIG_FILE}" 2>/dev/null || true)"
+  if [[ -z "${sunshine_adapter_name}" || ! -r "${sunshine_adapter_name}" || ! -w "${sunshine_adapter_name}" ]]; then
+    sunshine_adapter_name=""
+    for render_node in /dev/dri/renderD*; do
+      [[ -e "${render_node}" ]] || continue
+      if [[ -r "${render_node}" && -w "${render_node}" ]]; then
+        sunshine_adapter_name="${render_node}"
+        break
+      fi
+    done
+    if [[ -n "${sunshine_adapter_name}" ]]; then
+      if grep -Eq '^[[:space:]]*adapter_name[[:space:]]*=' "${JRMC_SUNSHINE_CONFIG_FILE}"; then
+        sed -i "s|^[[:space:]]*adapter_name[[:space:]]*=.*$|adapter_name = ${sunshine_adapter_name}|" "${JRMC_SUNSHINE_CONFIG_FILE}"
+      else
+        printf 'adapter_name = %s\n' "${sunshine_adapter_name}" >>"${JRMC_SUNSHINE_CONFIG_FILE}"
+      fi
+      chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_SUNSHINE_CONFIG_FILE}" >/dev/null 2>&1 || true
+      chmod 0600 "${JRMC_SUNSHINE_CONFIG_FILE}" >/dev/null 2>&1 || true
+    fi
+  fi
+fi
+
+mkdir -p /tmp/.X11-unix
+install -d -m 700 -o "${JRMC_USER}" -g "${JRMC_USER}" "$(dirname "${JRMC_SUNSHINE_XAUTHORITY}")"
+install -m 600 -o "${JRMC_USER}" -g "${JRMC_USER}" /dev/null "${JRMC_SUNSHINE_XAUTHORITY}"
+rm -f "/tmp/.X${JRMC_SUNSHINE_DISPLAY}-lock" "/tmp/.X11-unix/X${JRMC_SUNSHINE_DISPLAY}"
+sunshine_cookie="$(mcookie)"
+for xauth_name in \
+  "${HOSTNAME}/unix:${JRMC_SUNSHINE_DISPLAY}" \
+  "unix:${JRMC_SUNSHINE_DISPLAY}" \
+  ":${JRMC_SUNSHINE_DISPLAY}"; do
+  xauth -f "${JRMC_SUNSHINE_XAUTHORITY}" add "${xauth_name}" . "${sunshine_cookie}" >/dev/null 2>&1 || true
+done
+
+cleanup() {
+  /usr/local/bin/jrmc-stop-sunshine-session >/dev/null 2>&1 || true
+}
+trap cleanup EXIT TERM INT
+
+run_sunshine_user() {
+  runuser -u "${JRMC_USER}" -- env \
+    HOME="${JRMC_HOME}" \
+    USER="${JRMC_USER}" \
+    DISPLAY=":${JRMC_SUNSHINE_DISPLAY}" \
+    XAUTHORITY="${JRMC_SUNSHINE_XAUTHORITY}" \
+    "$@"
+}
+
+ensure_sunshine_udev_runtime() {
+  if [[ ! -d /host-run-udev/data ]]; then
+    return 0
+  fi
+
+  if [[ -L /run/udev ]] && [[ "$(readlink -f /run/udev 2>/dev/null || true)" == "/host-run-udev" ]]; then
+    return 0
+  fi
+
+  rm -rf /run/udev
+  ln -s /host-run-udev /run/udev
+}
+
+wait_for_sunshine_display() {
+  for _i in $(seq 1 30); do
+    if run_sunshine_user xdpyinfo >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.5
+  done
+
+  return 1
+}
+
+apply_sunshine_session_scale() {
+  run_sunshine_user /usr/local/bin/jrmc-scale-profile apply-session >/dev/null 2>&1 || true
+}
+
+sunshine_input_devices_ready() {
+  [[ -c /dev/input/event3 && -c /dev/input/event4 && -c /dev/input/event5 ]]
+}
+
+start_sunshine_xorg() {
+  Xorg ":${JRMC_SUNSHINE_DISPLAY}" \
+    -auth "${JRMC_SUNSHINE_XAUTHORITY}" \
+    -config /etc/X11/jrmc-sunshine-xorg.conf \
+    -noreset \
+    -nolisten tcp \
+    -logfile /tmp/jrmc-sunshine-xorg.log &
+  xorg_pid=$!
+  printf '%s\n' "${xorg_pid}" >"${JRMC_SUNSHINE_XORG_PIDFILE}"
+
+  chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_SUNSHINE_XAUTHORITY}" >/dev/null 2>&1 || true
+  chmod 0600 "${JRMC_SUNSHINE_XAUTHORITY}" >/dev/null 2>&1 || true
+
+  wait_for_sunshine_display || true
+
+  DISPLAY=":${JRMC_SUNSHINE_DISPLAY}" XAUTHORITY="${JRMC_SUNSHINE_XAUTHORITY}" xhost +SI:localuser:"${JRMC_USER}" >/dev/null 2>&1 || true
+}
+
+start_sunshine_openbox() {
+  run_sunshine_user /usr/bin/openbox >/tmp/jrmc-openbox-sunshine.log 2>&1 &
+  openbox_pid=$!
+  printf '%s\n' "${openbox_pid}" >"${JRMC_SUNSHINE_OPENBOX_PIDFILE}"
+}
+
+bounce_sunshine_display() {
+  kill "${openbox_pid}" >/dev/null 2>&1 || true
+  kill "${xorg_pid}" >/dev/null 2>&1 || true
+  wait "${openbox_pid}" 2>/dev/null || true
+  wait "${xorg_pid}" 2>/dev/null || true
+
+  for _j in $(seq 1 20); do
+    if ! kill -0 "${xorg_pid}" 2>/dev/null; then
+      break
+    fi
+    sleep 0.2
+  done
+
+  for _j in $(seq 1 20); do
+    rm -f "/tmp/.X${JRMC_SUNSHINE_DISPLAY}-lock" "/tmp/.X11-unix/X${JRMC_SUNSHINE_DISPLAY}"
+    if [[ ! -e "/tmp/.X${JRMC_SUNSHINE_DISPLAY}-lock" && ! -e "/tmp/.X11-unix/X${JRMC_SUNSHINE_DISPLAY}" ]]; then
+      break
+    fi
+    sleep 0.2
+  done
+
+  start_sunshine_xorg
+  start_sunshine_openbox
+  apply_sunshine_session_scale
+}
+
+ensure_sunshine_udev_runtime
+
+start_sunshine_xorg
+start_sunshine_openbox
+
+apply_sunshine_session_scale
+
+run_sunshine_user /usr/local/bin/jrmc-scale-watch >/dev/null 2>&1 &
+scale_watch_pid=$!
+printf '%s\n' "${scale_watch_pid}" >"${JRMC_SUNSHINE_SCALE_PIDFILE}"
+
+run_sunshine_user sunshine "${JRMC_SUNSHINE_CONFIG_FILE}" >/tmp/jrmc-sunshine.log 2>&1 &
+sunshine_pid=$!
+printf '%s\n' "${sunshine_pid}" >"${JRMC_SUNSHINE_PIDFILE}"
+
+if [[ -d /host-run-udev/data ]]; then
+  for _i in $(seq 1 20); do
+    if sunshine_input_devices_ready; then
+      break
+    fi
+    sleep 0.5
+  done
+
+  if sunshine_input_devices_ready; then
+    bounce_sunshine_display
+  fi
+fi
+
+wait "${sunshine_pid}"
+EOF
+chmod +x /usr/local/bin/jrmc-sunshine-start
+
+cat <<EOF >/etc/X11/jrmc-sunshine-xorg.conf
+Section "ServerFlags"
+    Option "DontVTSwitch" "true"
+    Option "AutoAddDevices" "true"
+    Option "AutoEnableDevices" "true"
+EndSection
+
+Section "Monitor"
+    Identifier "JRMCMonitor"
+    HorizSync 28.0-80.0
+    VertRefresh 48.0-75.0
+    Modeline "${JRMC_WIDTH}x${JRMC_HEIGHT}" 118.25 ${JRMC_WIDTH} 1488 1632 1824 ${JRMC_HEIGHT} 903 909 934
+EndSection
+
+Section "Device"
+    Identifier "JRMCDevice"
+    Driver "dummy"
+    VideoRam 256000
+EndSection
+
+Section "Screen"
+    Identifier "JRMCScreen"
+    Device "JRMCDevice"
+    Monitor "JRMCMonitor"
+    DefaultDepth 24
+    SubSection "Display"
+        Depth 24
+        Modes "${JRMC_WIDTH}x${JRMC_HEIGHT}"
+        Virtual ${JRMC_WIDTH} ${JRMC_HEIGHT}
+    EndSubSection
+EndSection
+
+Section "ServerLayout"
+    Identifier "JRMCLayout"
+    Screen "JRMCScreen"
+EndSection
+EOF
 
 cat <<'EOF' >/usr/local/bin/jrmc-scale-profile
 #!/usr/bin/env python3
@@ -397,6 +835,7 @@ target_scale() {
   case "${1:-}" in
     vnc) printf '1\n' ;;
     rdp) mapped_scale ;;
+    sunshine) mapped_scale ;;
     *) return 1 ;;
   esac
 }
@@ -520,6 +959,17 @@ apply_shared_display_now() {
   fi
 }
 
+apply_sunshine_display_now() {
+  if systemctl is-active --quiet jrmc-sunshine.service; then
+    runuser -u "${JRMC_USER}" -- env \
+      HOME="${JRMC_HOME}" \
+      USER="${JRMC_USER}" \
+      DISPLAY=":${JRMC_SUNSHINE_DISPLAY}" \
+      XAUTHORITY="${JRMC_SUNSHINE_XAUTHORITY}" \
+      /usr/local/bin/jrmc-scale-profile apply-session >/dev/null 2>&1 || true
+  fi
+}
+
 restart_vnc_mode_if_active() {
   local active_mode=""
   active_mode="$(/usr/local/bin/jrmc-mode status 2>/dev/null | awk -F': ' '/^active-mode:/ {print $2; exit}')"
@@ -536,6 +986,7 @@ print_status() {
   echo "shared-ui: $(systemctl is-active jrmc-ui.service 2>/dev/null || true)"
   echo "shared-vnc-backend: $(systemctl is-active jrmc-vnc.service 2>/dev/null || true)"
   echo "native-rdp: $(systemctl is-active xrdp.service 2>/dev/null || true)"
+  echo "sunshine: $(systemctl is-active jrmc-sunshine.service 2>/dev/null || true)"
 }
 
 case "${action}" in
@@ -555,13 +1006,19 @@ case "${action}" in
     else
       if [[ "${active_mode}" == "rdp" ]]; then
         /usr/local/bin/jrmc-app-scale rdp >/dev/null 2>&1 || true
+      elif [[ "${active_mode}" == "sunshine" ]]; then
+        /usr/local/bin/jrmc-app-scale sunshine >/dev/null 2>&1 || true
       fi
       apply_shared_display_now
+      apply_sunshine_display_now
       echo "JRMC UI scale set to ${scale}%."
     fi
-    echo "Future VNC sessions keep JRiver internal scale at 1 while shared-display scaling follows the preset. Future RDP sessions map the preset into JRiver's own Standard View size setting."
+    echo "Future VNC sessions keep JRiver internal scale at 1 while shared-display scaling follows the preset. Future RDP and Sunshine sessions map the preset into JRiver's own Standard View size setting."
     if systemctl is-active --quiet xrdp.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_RDP_PIDFILE}" >/dev/null 2>&1; then
       echo "If an RDP JRiver session is already running, reconnect so the app relaunches with the updated JRiver internal scale."
+    fi
+    if systemctl is-active --quiet jrmc-sunshine.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_SUNSHINE_UI_PIDFILE}" >/dev/null 2>&1; then
+      echo "If a Sunshine JRiver session is already running, close and relaunch it from Moonlight so the app picks up the updated JRiver internal scale."
     fi
     echo "For the sharpest result, let noVNC fit the larger framebuffer and keep client-side scaling at 100% / 1:1 in TurboVNC Viewer or Remmina when using high JRMC scale presets."
     ;;
@@ -1541,10 +1998,11 @@ Username: ${username}
 Password: ${password}
 
 Default mode: Media Server
-Modes: choose Media Server, VNC, or RDP from Dashboard or jrmc-mode.
+Modes: choose Media Server, VNC, RDP, or Sunshine from Dashboard or jrmc-mode.
 VNC mode: browser noVNC and direct VNC on port ${JRMC_VNC_PORT} run together against the same JRMC session through one TurboVNC backend.
 VNC authentication: after Dashboard sign-in, use the same Dashboard password when noVNC or a native VNC client prompts for the VNC password.
 RDP mode: native RDP on port ${JRMC_NATIVE_RDP_PORT} for Remmina using the same username and password as Dashboard.
+Sunshine mode: Moonlight-compatible game streaming through Sunshine on https://$(hostname -I | awk '{print $1}'):${JRMC_SUNSHINE_WEB_PORT}/ with its own admin setup and pairing flow.
 UI Scale: set 100%-200% presets from Dashboard or jrmc-scale; active sessions update best-effort.
 Remote audio: optionally point JRMC at a trusted-LAN PipeWire Pulse endpoint from Dashboard or jrmc-remote-audio.
 GPU passthrough: if enabled during install, validate device visibility and FFmpeg acceleration with jrmc-gpu-status and jrmc-gpu-test.
@@ -1600,6 +2058,9 @@ persist_mode() {
     rdp)
       update_default JRMC_NATIVE_RDP_ENABLED 1
       ;;
+    sunshine)
+      update_default JRMC_NATIVE_RDP_ENABLED 0
+      ;;
   esac
 }
 
@@ -1608,21 +2069,27 @@ sync_boot_units() {
   case "${new_mode}" in
     mediaserver)
       systemctl enable jrmc-mediaserver.service >/dev/null 2>&1 || true
-      systemctl disable jrmc-vnc.service jrmc-ui.service jrmc-websockify.service xrdp.service xrdp-sesman.service >/dev/null 2>&1 || true
+      systemctl disable jrmc-vnc.service jrmc-ui.service jrmc-websockify.service xrdp.service xrdp-sesman.service jrmc-sunshine.service >/dev/null 2>&1 || true
       ;;
     vnc)
       systemctl enable jrmc-ui.service jrmc-websockify.service >/dev/null 2>&1 || true
-      systemctl disable jrmc-mediaserver.service jrmc-vnc.service xrdp.service xrdp-sesman.service >/dev/null 2>&1 || true
+      systemctl disable jrmc-mediaserver.service jrmc-vnc.service xrdp.service xrdp-sesman.service jrmc-sunshine.service >/dev/null 2>&1 || true
       ;;
     rdp)
       systemctl enable xrdp-sesman.service xrdp.service >/dev/null 2>&1 || true
-      systemctl disable jrmc-mediaserver.service jrmc-vnc.service jrmc-ui.service jrmc-websockify.service >/dev/null 2>&1 || true
+      systemctl disable jrmc-mediaserver.service jrmc-vnc.service jrmc-ui.service jrmc-websockify.service jrmc-sunshine.service >/dev/null 2>&1 || true
+      ;;
+    sunshine)
+      systemctl enable jrmc-sunshine.service >/dev/null 2>&1 || true
+      systemctl disable jrmc-mediaserver.service jrmc-vnc.service jrmc-ui.service jrmc-websockify.service xrdp.service xrdp-sesman.service >/dev/null 2>&1 || true
       ;;
   esac
 }
 
 current_mode() {
-  if systemctl is-active --quiet xrdp.service || systemctl is-active --quiet xrdp-sesman.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_RDP_PIDFILE}" >/dev/null 2>&1; then
+  if systemctl is-active --quiet jrmc-sunshine.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_SUNSHINE_PIDFILE}" >/dev/null 2>&1; then
+    echo "sunshine"
+  elif systemctl is-active --quiet xrdp.service || systemctl is-active --quiet xrdp-sesman.service || /usr/local/bin/jrmc-pidfile-active "${JRMC_RDP_PIDFILE}" >/dev/null 2>&1; then
     echo "rdp"
   elif systemctl is-active --quiet jrmc-ui.service || systemctl is-active --quiet jrmc-websockify.service; then
     echo "vnc"
@@ -1643,8 +2110,14 @@ stop_vnc_runtime() {
   rm -f "${JRMC_UI_PIDFILE}"
 }
 
+stop_sunshine_runtime() {
+  systemctl stop jrmc-sunshine.service >/dev/null 2>&1 || true
+  /usr/local/bin/jrmc-stop-sunshine-session
+}
+
 case "${mode}" in
   ui|vnc)
+    stop_sunshine_runtime
     stop_rdp_runtime
     systemctl stop jrmc-mediaserver.service || true
     systemctl restart jrmc-vnc.service
@@ -1655,6 +2128,7 @@ case "${mode}" in
     echo "JRMC VNC mode started. Browser noVNC and direct VNC now share the same writable JRMC session."
     ;;
   mediaserver|server)
+    stop_sunshine_runtime
     stop_rdp_runtime
     systemctl stop jrmc-ui.service jrmc-websockify.service || true
     systemctl restart jrmc-vnc.service
@@ -1664,6 +2138,7 @@ case "${mode}" in
     echo "JRMC Media Server mode started. Interactive VNC and RDP transports were stopped."
     ;;
   rdp)
+    stop_sunshine_runtime
     systemctl stop jrmc-mediaserver.service >/dev/null 2>&1 || true
     stop_vnc_runtime
     /usr/local/bin/jrmc-stop-rdp-session
@@ -1672,11 +2147,27 @@ case "${mode}" in
     sync_boot_units rdp
     echo "JRMC RDP mode started. VNC transports were stopped so RDP owns the writable JRMC session."
     ;;
+  sunshine)
+    stop_rdp_runtime
+    systemctl stop jrmc-mediaserver.service >/dev/null 2>&1 || true
+    stop_vnc_runtime
+    /usr/local/bin/jrmc-stop-sunshine-session
+    systemctl enable --now jrmc-sunshine.service
+    persist_mode sunshine
+    sync_boot_units sunshine
+    echo "JRMC Sunshine mode started. Moonlight-compatible streaming now owns the writable JRMC desktop session."
+    ;;
   stop-ui)
     stop_vnc_runtime
     persist_mode mediaserver
     sync_boot_units mediaserver
     echo "JRMC VNC mode stopped. Choose another mode to continue using JRMC."
+    ;;
+  stop-sunshine)
+    stop_sunshine_runtime
+    persist_mode mediaserver
+    sync_boot_units mediaserver
+    echo "JRMC Sunshine mode stopped. Choose another mode to continue using JRMC."
     ;;
   stop-server)
     systemctl stop jrmc-mediaserver.service || true
@@ -1692,6 +2183,7 @@ case "${mode}" in
     echo "jrmc-websockify: $(systemctl is-active jrmc-websockify.service 2>/dev/null || true)"
     echo "jrmc-ui: $(systemctl is-active jrmc-ui.service 2>/dev/null || true)"
     echo "xrdp: $(systemctl is-active xrdp.service 2>/dev/null || true)"
+    echo "jrmc-sunshine: $(systemctl is-active jrmc-sunshine.service 2>/dev/null || true)"
     echo "ui-scale: ${JRMC_UI_SCALE:-100}%"
     echo "gpu-enabled: ${JRMC_GPU_ENABLED:-no}"
     echo "gpu-selected-type: ${JRMC_GPU_SELECTED_TYPE:-auto}"
@@ -1705,10 +2197,13 @@ case "${mode}" in
     elif [[ "${active_mode}" == "rdp" ]]; then
       echo "rdp: $(hostname -I | awk '{print $1}'):${JRMC_NATIVE_RDP_PORT}"
       echo "rdp-user: ${JRMC_NATIVE_RDP_USER}"
+    elif [[ "${active_mode}" == "sunshine" ]]; then
+      echo "sunshine-admin: https://$(hostname -I | awk '{print $1}'):${JRMC_SUNSHINE_WEB_PORT}/"
+      echo "moonlight-host: $(hostname -I | awk '{print $1}')"
     fi
     ;;
   *)
-    echo "Usage: jrmc-mode {vnc|ui|rdp|mediaserver|server|stop-ui|stop-server|status}" >&2
+    echo "Usage: jrmc-mode {vnc|ui|rdp|sunshine|mediaserver|server|stop-ui|stop-sunshine|stop-server|status}" >&2
     exit 1
     ;;
 esac
@@ -1776,7 +2271,8 @@ if [[ -z "${restore_file}" || ! -f "${restore_file}" ]]; then
   exit 1
 fi
 
-systemctl stop jrmc-ui.service jrmc-websockify.service jrmc-vnc.service jrmc-mediaserver.service xrdp.service xrdp-sesman.service || true
+systemctl stop jrmc-ui.service jrmc-websockify.service jrmc-vnc.service jrmc-mediaserver.service jrmc-sunshine.service xrdp.service xrdp-sesman.service || true
+/usr/local/bin/jrmc-stop-sunshine-session
 /usr/local/bin/jrmc-stop-rdp-session
 runuser -u "${JRMC_USER}" -- env HOME="${JRMC_HOME}" /usr/bin/mediacenter35 /RestoreFromFile "${restore_file}"
 systemctl start jrmc-mediaserver.service
@@ -1827,7 +2323,8 @@ subprocess.run(["sudo", "/usr/local/bin/jrmc-set-web-credentials", username, pas
 respond(
     "<html><body><h1>JRMC web access configured</h1>"
     "<p>Open <a href='/dashboard/'>Dashboard</a> and sign in with the credentials you just created.</p>"
-    "<p>The container starts in Media Server mode. Use Dashboard to switch between Media Server, VNC, and RDP as needed.</p>"
+  "<p>The container starts in Media Server mode. Use Dashboard to switch between Media Server, VNC, RDP, and Sunshine as needed.</p>"
+  "<p>For Sunshine, switch modes first, then open Sunshine Status to reach the Sunshine admin UI, create Sunshine's separate admin account, and pair Moonlight.</p>"
     "</body></html>"
 )
 EOF
@@ -1861,6 +2358,7 @@ remote_audio_sink = params.get("remote_audio_sink", [""])[0].strip()
 mapping = {
   "switch-vnc": ["sudo", "/usr/local/bin/jrmc-mode", "vnc"],
   "switch-rdp": ["sudo", "/usr/local/bin/jrmc-mode", "rdp"],
+  "switch-sunshine": ["sudo", "/usr/local/bin/jrmc-mode", "sunshine"],
   "switch-mediaserver": ["sudo", "/usr/local/bin/jrmc-mode", "mediaserver"],
   "mode-status": ["sudo", "/usr/local/bin/jrmc-mode", "status"],
   "start-ui": ["sudo", "/usr/local/bin/jrmc-mode", "vnc"],
@@ -1876,6 +2374,7 @@ mapping = {
   "ui-scale-status": ["sudo", "/usr/local/bin/jrmc-scale", "status"],
   "gpu-status": ["sudo", "/usr/local/bin/jrmc-gpu-status"],
   "gpu-test": ["sudo", "/usr/local/bin/jrmc-gpu-test"],
+  "sunshine-status": ["sudo", "/usr/local/bin/jrmc-sunshine-status"],
   "disable-remote-audio": ["sudo", "/usr/local/bin/jrmc-remote-audio", "disable"],
   "remote-audio-status": ["sudo", "/usr/local/bin/jrmc-remote-audio", "status"],
 }
@@ -1939,7 +2438,7 @@ cat <<'EOF' >${WEB_ROOT}/setup/index.html
       <input type="password" name="confirm_password" minlength="8" required>
       <button type="submit">Create web credentials</button>
     </form>
-    <p>After setup, sign in at <a href="/dashboard/">Dashboard</a>, then choose Media Server, VNC, or RDP mode.</p>
+    <p>After setup, sign in at <a href="/dashboard/">Dashboard</a>, then choose Media Server, VNC, RDP, or Sunshine mode.</p>
   </div>
 </body>
 </html>
@@ -1968,10 +2467,11 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
 <body>
   <div class="card">
     <h1>JRiver Media Center Dashboard</h1>
-    <p>Choose one active runtime mode at a time: <strong>Media Server</strong>, <strong>VNC</strong>, or <strong>RDP</strong>.</p>
+    <p>Choose one active runtime mode at a time: <strong>Media Server</strong>, <strong>VNC</strong>, <strong>RDP</strong>, or <strong>Sunshine</strong>.</p>
     <div class="actions">
       <a href="/cgi-bin/jrmc-control.py?action=switch-vnc">Switch to VNC</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=switch-rdp">Switch to RDP</a>
+      <a class="alt" href="/cgi-bin/jrmc-control.py?action=switch-sunshine">Switch to Sunshine</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=switch-mediaserver">Switch to Media Server</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=mode-status">Mode Status</a>
     </div>
@@ -1993,6 +2493,16 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
     <p>Switching to RDP stops VNC and Media Server so JRiver keeps one writable library owner at a time.</p>
   </div>
   <div class="card">
+    <h2>Sunshine Mode</h2>
+    <p>Sunshine mode starts a Moonlight-compatible JRMC desktop on its own Xorg session with GPU-backed video encoding when GPU passthrough is available. Sunshine keeps a separate admin UI and pairing workflow from the Dashboard.</p>
+    <div class="actions">
+      <a class="alt" href="/cgi-bin/jrmc-control.py?action=switch-sunshine">Start Sunshine Mode</a>
+      <a class="alt" href="/cgi-bin/jrmc-control.py?action=sunshine-status">Sunshine Status</a>
+      <a class="alt" id="sunshine-admin-link" href="#" target="_blank" rel="noopener noreferrer">Open Sunshine Admin</a>
+    </div>
+    <p>Switch into Sunshine mode first, then open Sunshine Status to confirm the admin URL, active render device, and input-device state. Use Open Sunshine Admin to reach the web UI on port <code>47990</code>, create Sunshine's separate admin account, and enter the pairing PIN from Moonlight. This mode is intended for GPU-enabled installs only.</p>
+  </div>
+  <div class="card">
     <h2>UI Scale</h2>
     <div class="stack">
       <form class="scale-form" method="post" action="/cgi-bin/jrmc-control.py">
@@ -2011,8 +2521,8 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
         <a class="alt" href="/cgi-bin/jrmc-control.py?action=ui-scale-status">UI Scale Status</a>
       </div>
     </div>
-    <p>Scale presets persist for future VNC and RDP sessions. In VNC mode, larger presets request a larger server framebuffer so noVNC can scale it back down cleanly in the browser while JRiver keeps its own internal Standard View size at 1.</p>
-    <p>In RDP mode, the same presets are translated into JRiver's internal Standard View size before the app launches, so 100% maps to 1, 125% to 1.25, 150% to 1.5, 175% to 1.75, and 200% to 2.</p>
+    <p>Scale presets persist for future VNC, RDP, and Sunshine sessions. In VNC mode, larger presets request a larger server framebuffer so noVNC can scale it back down cleanly in the browser while JRiver keeps its own internal Standard View size at 1.</p>
+    <p>In RDP and Sunshine mode, the same presets are translated into JRiver's internal Standard View size before the app launches, so 100% maps to 1, 125% to 1.25, 150% to 1.5, 175% to 1.75, and 200% to 2.</p>
     <p>For the sharpest result, let noVNC fit the view automatically and prefer 100% / 1:1 client-side scaling in TurboVNC Viewer or Remmina when using a larger JRMC scale preset.</p>
   </div>
   <div class="card">
@@ -2053,6 +2563,12 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
     <p>Import a <code>.mjr</code> license file from inside the container with <code>jrmc-activate /path/to/file.mjr</code>.</p>
     <p>Local admin helper: <code>jrmc-configure</code></p>
   </div>
+  <script>
+    const sunshineAdminLink = document.getElementById('sunshine-admin-link');
+    if (sunshineAdminLink) {
+      sunshineAdminLink.href = `https://${window.location.hostname}:47990/`;
+    }
+  </script>
 </body>
 </html>
 EOF
@@ -2138,7 +2654,7 @@ PY
 systemctl disable --now xrdp.service xrdp-sesman.service >/dev/null 2>&1 || true
 
 cat <<'EOF' >/etc/sudoers.d/jrmc-web
-www-data ALL=(root) NOPASSWD: /usr/local/bin/jrmc-mode, /usr/local/bin/jrmc-scale, /usr/local/bin/jrmc-remote-audio, /usr/local/bin/jrmc-gpu-status, /usr/local/bin/jrmc-gpu-test, /usr/local/bin/jrmc-set-web-credentials
+www-data ALL=(root) NOPASSWD: /usr/local/bin/jrmc-mode, /usr/local/bin/jrmc-scale, /usr/local/bin/jrmc-remote-audio, /usr/local/bin/jrmc-gpu-status, /usr/local/bin/jrmc-gpu-test, /usr/local/bin/jrmc-set-web-credentials, /usr/local/bin/jrmc-sunshine-status
 EOF
 chmod 0440 /etc/sudoers.d/jrmc-web
 
@@ -2223,6 +2739,22 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+cat <<EOF >/etc/systemd/system/jrmc-sunshine.service
+[Unit]
+Description=JRiver Media Center Sunshine mode
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/jrmc-sunshine-start
+ExecStop=/usr/local/bin/jrmc-stop-sunshine-session
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 rm -f /tmp/.X*-lock /tmp/.X11-unix/X*
 systemctl daemon-reload
 systemctl enable --now fcgiwrap.socket
@@ -2244,6 +2776,7 @@ echo "Default mode:         Media Server"
 echo "VNC mode:             Browser noVNC plus direct VNC on port 5900 through one TurboVNC server"
 echo "UI Scale:             Presets 100/125/150/175/200 via Dashboard or jrmc-scale"
 echo "RDP mode:             Port 3389 for Remmina using the same Dashboard username; switching modes tears down the others first"
+echo "Sunshine mode:        Moonlight-compatible streaming with Sunshine on port 47990 and GPU-backed encoding"
 echo "GPU passthrough:      Validate with jrmc-gpu-status and jrmc-gpu-test when enabled at install time"
 echo
 
@@ -2252,10 +2785,12 @@ select opt in \
   "Set web credentials" \
   "Switch to VNC mode" \
   "Switch to RDP mode" \
+  "Switch to Sunshine mode" \
   "Switch to Media Server mode" \
   "Show current mode status" \
   "Set UI scale preset" \
   "Show UI scale status" \
+  "Show Sunshine status" \
   "Show GPU status" \
   "Run GPU validation" \
   "Import .mjr activation file" \
@@ -2275,6 +2810,9 @@ select opt in \
   "Switch to RDP mode")
     /usr/local/bin/jrmc-mode rdp
     ;;
+  "Switch to Sunshine mode")
+    /usr/local/bin/jrmc-mode sunshine
+    ;;
   "Switch to Media Server mode")
     /usr/local/bin/jrmc-mode mediaserver
     ;;
@@ -2287,6 +2825,9 @@ select opt in \
     ;;
   "Show UI scale status")
     /usr/local/bin/jrmc-scale status
+    ;;
+  "Show Sunshine status")
+    /usr/local/bin/jrmc-sunshine-status
     ;;
   "Show GPU status")
     /usr/local/bin/jrmc-gpu-status
