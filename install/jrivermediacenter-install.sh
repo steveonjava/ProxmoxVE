@@ -401,6 +401,7 @@ display_value="${DISPLAY:-:${JRMC_SUNSHINE_DISPLAY}}"
 xauthority_value="${XAUTHORITY-${JRMC_SUNSHINE_XAUTHORITY}}"
 wayland_display_value="${WAYLAND_DISPLAY:-${JRMC_SUNSHINE_WAYLAND_DISPLAY}}"
 xdg_runtime_dir_value="${XDG_RUNTIME_DIR:-${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}}"
+backend_note_value="${JRMC_SUNSHINE_BACKEND_NOTE:-}"
 
 case "${action}" in
   exports)
@@ -409,6 +410,7 @@ case "${action}" in
     printf 'export XAUTHORITY=%q\n' "${xauthority_value}"
     printf 'export WAYLAND_DISPLAY=%q\n' "${wayland_display_value}"
     printf 'export XDG_RUNTIME_DIR=%q\n' "${xdg_runtime_dir_value}"
+    printf 'export JRMC_SUNSHINE_BACKEND_NOTE=%q\n' "${backend_note_value}"
     ;;
   status)
     printf 'backend=%s\n' "${backend}"
@@ -416,6 +418,7 @@ case "${action}" in
     printf 'xauthority=%s\n' "${xauthority_value}"
     printf 'wayland_display=%s\n' "${wayland_display_value}"
     printf 'xdg_runtime_dir=%s\n' "${xdg_runtime_dir_value}"
+    printf 'backend_note=%s\n' "${backend_note_value}"
     ;;
   *)
     echo "Usage: jrmc-sunshine-session-env {exports|status}" >&2
@@ -589,7 +592,9 @@ fi
 echo "sunshine-service: $(systemctl is-active jrmc-sunshine.service 2>/dev/null || true)"
 echo "sunshine-config: ${JRMC_SUNSHINE_CONFIG_FILE}"
 echo "sunshine-apps: ${JRMC_SUNSHINE_APPS_FILE}"
+echo "sunshine-backend-requested: ${JRMC_SUNSHINE_BACKEND:-labwc-wlr}"
 echo "sunshine-backend: ${JRMC_SUNSHINE_BACKEND_ACTIVE:-${JRMC_SUNSHINE_BACKEND:-labwc-wlr}}"
+echo "sunshine-backend-note: ${JRMC_SUNSHINE_BACKEND_NOTE:-}"
 echo "sunshine-display: ${DISPLAY:-:${JRMC_SUNSHINE_DISPLAY}}"
 echo "sunshine-wayland-display: ${WAYLAND_DISPLAY:-${JRMC_SUNSHINE_WAYLAND_DISPLAY}}"
 echo "sunshine-capture: $(awk -F= '/^[[:space:]]*capture[[:space:]]*=/{sub(/^[[:space:]]+/, "", $2); sub(/[[:space:]]+$/, "", $2); print $2; exit}' "${JRMC_SUNSHINE_CONFIG_FILE}" 2>/dev/null || true)"
@@ -650,6 +655,7 @@ DISPLAY="${DISPLAY:-}"
 XAUTHORITY=""
 WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}"
 XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}}"
+JRMC_SUNSHINE_BACKEND_NOTE=""
 ENV
 chmod 0600 "${env_file}"
 
@@ -659,6 +665,7 @@ DISPLAY="${DISPLAY:-}"
 XAUTHORITY=""
 WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}"
 XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}}"
+JRMC_SUNSHINE_BACKEND_NOTE=""
 ENV
 chmod 0600 "${JRMC_SUNSHINE_BACKEND_STATE_FILE}"
 
@@ -907,11 +914,23 @@ sunshine_input_devices_ready() {
   [[ -c /dev/input/event3 && -c /dev/input/event4 && -c /dev/input/event5 ]]
 }
 
+sunshine_backend_note=""
+
+sunshine_labwc_supported() {
+  if [[ ! -c /dev/tty0 ]]; then
+    sunshine_backend_note="wlroots input requires an active seat and tty, but /dev/tty0 is unavailable here; using xorg-dummy."
+    return 1
+  fi
+
+  return 0
+}
+
 write_backend_state() {
   local backend_name="$1"
   local display_value="$2"
   local xauthority_value="$3"
   local wayland_display_value="$4"
+  local backend_note_value="${5:-}"
 
   cat <<ENV >"${JRMC_SUNSHINE_SESSION_ENV_FILE}"
 JRMC_SUNSHINE_BACKEND_ACTIVE="${backend_name}"
@@ -919,6 +938,7 @@ DISPLAY="${display_value}"
 XAUTHORITY="${xauthority_value}"
 WAYLAND_DISPLAY="${wayland_display_value}"
 XDG_RUNTIME_DIR="${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}"
+JRMC_SUNSHINE_BACKEND_NOTE="${backend_note_value}"
 ENV
   chmod 0600 "${JRMC_SUNSHINE_SESSION_ENV_FILE}"
 
@@ -928,6 +948,7 @@ DISPLAY="${display_value}"
 XAUTHORITY="${xauthority_value}"
 WAYLAND_DISPLAY="${wayland_display_value}"
 XDG_RUNTIME_DIR="${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}"
+JRMC_SUNSHINE_BACKEND_NOTE="${backend_note_value}"
 ENV
   chmod 0600 "${JRMC_SUNSHINE_BACKEND_STATE_FILE}"
 
@@ -936,6 +957,7 @@ ENV
   XAUTHORITY="${xauthority_value}"
   WAYLAND_DISPLAY="${wayland_display_value}"
   XDG_RUNTIME_DIR="${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}"
+  JRMC_SUNSHINE_BACKEND_NOTE="${backend_note_value}"
 }
 
 start_sunshine_labwc() {
@@ -1007,7 +1029,7 @@ start_sunshine_xorg() {
 
   wait_for_sunshine_display || true
 
-  write_backend_state "xorg-dummy" ":${JRMC_SUNSHINE_DISPLAY}" "${JRMC_SUNSHINE_XAUTHORITY}" ""
+  write_backend_state "xorg-dummy" ":${JRMC_SUNSHINE_DISPLAY}" "${JRMC_SUNSHINE_XAUTHORITY}" "" "${sunshine_backend_note:-}"
 
   DISPLAY=":${JRMC_SUNSHINE_DISPLAY}" XAUTHORITY="${JRMC_SUNSHINE_XAUTHORITY}" xhost +SI:localuser:"${JRMC_USER}" >/dev/null 2>&1 || true
 }
@@ -1046,7 +1068,14 @@ bounce_sunshine_display() {
 
 ensure_sunshine_udev_runtime
 
-if ! start_sunshine_labwc; then
+labwc_started=0
+if [[ "${JRMC_SUNSHINE_BACKEND:-labwc-wlr}" == "labwc-wlr" ]] && sunshine_labwc_supported && start_sunshine_labwc; then
+  labwc_started=1
+elif [[ -z "${sunshine_backend_note:-}" && "${JRMC_SUNSHINE_BACKEND:-labwc-wlr}" == "labwc-wlr" ]]; then
+  sunshine_backend_note="labwc-wlr did not become ready; using xorg-dummy."
+fi
+
+if [[ "${labwc_started}" != "1" ]]; then
   rm -f "${JRMC_SUNSHINE_LABWC_PIDFILE}" "${JRMC_SUNSHINE_SESSION_ENV_FILE}" "${JRMC_SUNSHINE_BACKEND_STATE_FILE}"
   start_sunshine_xorg
   start_sunshine_openbox
