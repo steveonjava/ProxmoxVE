@@ -35,6 +35,7 @@ JRMC_HEIGHT=900
 JRMC_SUNSHINE_WIDTH=1600
 JRMC_SUNSHINE_HEIGHT=900
 JRMC_UI_SCALE=100
+JRMC_SUNSHINE_BACKEND=labwc-wlr
 
 color
 verb_ip6
@@ -77,16 +78,19 @@ $STD apt install -y \
   mesa-utils \
   nginx \
   novnc \
+  labwc \
   openbox \
   pulseaudio-utils \
   python3 \
   ssl-cert \
   websockify \
+  wlr-randr \
   xcvt \
   x11-utils \
   x11-xserver-utils \
   xauth \
   xdotool \
+  xwayland \
   xserver-xorg-core \
   xserver-xorg-input-libinput \
   xserver-xorg-video-dummy \
@@ -166,11 +170,22 @@ JRMC_RUNTIME_DIR="${RUNTIME_DIR}"
 JRMC_SUNSHINE_CONFIG_DIR="${SUNSHINE_CONFIG_DIR}"
 JRMC_SUNSHINE_CONFIG_FILE="${SUNSHINE_CONFIG_DIR}/sunshine.conf"
 JRMC_SUNSHINE_APPS_FILE="${SUNSHINE_CONFIG_DIR}/apps.json"
+JRMC_SUNSHINE_BACKEND="${JRMC_SUNSHINE_BACKEND}"
 JRMC_SUNSHINE_XAUTHORITY="${RUNTIME_DIR}/sunshine.Xauthority"
+JRMC_SUNSHINE_SESSION_ENV_FILE="${RUNTIME_DIR}/sunshine-session.env"
+JRMC_SUNSHINE_BACKEND_STATE_FILE="${RUNTIME_DIR}/sunshine-backend.env"
+JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR="${RUNTIME_DIR}/wayland-runtime"
+JRMC_SUNSHINE_WAYLAND_DISPLAY="jrmc-sunshine-0"
+JRMC_SUNSHINE_LABWC_CONFIG_DIR="${CONFIG_DIR}/sunshine-labwc"
+JRMC_SUNSHINE_LABWC_AUTOSTART_FILE="${CONFIG_DIR}/sunshine-labwc/autostart"
+JRMC_SUNSHINE_LABWC_ENVIRONMENT_FILE="${CONFIG_DIR}/sunshine-labwc/environment"
+JRMC_SUNSHINE_LABWC_RC_FILE="${CONFIG_DIR}/sunshine-labwc/rc.xml"
+JRMC_SUNSHINE_LABWC_XINITRC_FILE="${CONFIG_DIR}/sunshine-labwc/xinitrc"
 JRMC_UI_PIDFILE="${RUNTIME_DIR}/ui.pid"
 JRMC_RDP_PIDFILE="${RUNTIME_DIR}/rdp.pid"
 JRMC_RDP_OPENBOX_PIDFILE="${RUNTIME_DIR}/rdp-openbox.pid"
 JRMC_SUNSHINE_PIDFILE="${RUNTIME_DIR}/sunshine.pid"
+JRMC_SUNSHINE_LABWC_PIDFILE="${RUNTIME_DIR}/sunshine-labwc.pid"
 JRMC_SUNSHINE_XORG_PIDFILE="${RUNTIME_DIR}/sunshine-xorg.pid"
 JRMC_SUNSHINE_OPENBOX_PIDFILE="${RUNTIME_DIR}/sunshine-openbox.pid"
 JRMC_SUNSHINE_SCALE_PIDFILE="${RUNTIME_DIR}/sunshine-scale.pid"
@@ -235,7 +250,7 @@ port = ${JRMC_SUNSHINE_PORT}
 file_apps = ${SUNSHINE_CONFIG_DIR}/apps.json
 credentials_file = sunshine_state.json
 log_path = sunshine.log
-capture = x11
+capture = wlr
 encoder = ${sunshine_encoder}
 EOF
 if [[ -n "${sunshine_adapter_name}" ]]; then
@@ -246,8 +261,7 @@ cat <<EOF >"${SUNSHINE_CONFIG_DIR}/apps.json"
   "env": {
     "HOME": "${APP_HOME}",
     "USER": "${APP_USER}",
-    "DISPLAY": ":${JRMC_SUNSHINE_DISPLAY}",
-    "XAUTHORITY": "${RUNTIME_DIR}/sunshine.Xauthority"
+    "XDG_RUNTIME_DIR": "${RUNTIME_DIR}/wayland-runtime"
   },
   "apps": [
     {
@@ -348,8 +362,18 @@ if ! command -v sunshine >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v Xorg >/dev/null 2>&1; then
-  echo "Xorg is not installed." >&2
+if ! command -v labwc >/dev/null 2>&1; then
+  echo "labwc is not installed." >&2
+  exit 1
+fi
+
+if ! command -v wlr-randr >/dev/null 2>&1; then
+  echo "wlr-randr is not installed." >&2
+  exit 1
+fi
+
+if ! command -v Xwayland >/dev/null 2>&1; then
+  echo "Xwayland is not installed." >&2
   exit 1
 fi
 
@@ -360,6 +384,47 @@ fi
 EOF
 chmod +x /usr/local/bin/jrmc-sunshine-ready
 
+cat <<'EOF' >/usr/local/bin/jrmc-sunshine-session-env
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/default/jrmc
+
+action="${1:-exports}"
+
+if [[ -f "${JRMC_SUNSHINE_SESSION_ENV_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${JRMC_SUNSHINE_SESSION_ENV_FILE}"
+fi
+
+backend="${JRMC_SUNSHINE_BACKEND_ACTIVE:-${JRMC_SUNSHINE_BACKEND:-labwc-wlr}}"
+display_value="${DISPLAY:-:${JRMC_SUNSHINE_DISPLAY}}"
+xauthority_value="${XAUTHORITY-${JRMC_SUNSHINE_XAUTHORITY}}"
+wayland_display_value="${WAYLAND_DISPLAY:-${JRMC_SUNSHINE_WAYLAND_DISPLAY}}"
+xdg_runtime_dir_value="${XDG_RUNTIME_DIR:-${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}}"
+
+case "${action}" in
+  exports)
+    printf 'export JRMC_SUNSHINE_BACKEND_ACTIVE=%q\n' "${backend}"
+    printf 'export DISPLAY=%q\n' "${display_value}"
+    printf 'export XAUTHORITY=%q\n' "${xauthority_value}"
+    printf 'export WAYLAND_DISPLAY=%q\n' "${wayland_display_value}"
+    printf 'export XDG_RUNTIME_DIR=%q\n' "${xdg_runtime_dir_value}"
+    ;;
+  status)
+    printf 'backend=%s\n' "${backend}"
+    printf 'display=%s\n' "${display_value}"
+    printf 'xauthority=%s\n' "${xauthority_value}"
+    printf 'wayland_display=%s\n' "${wayland_display_value}"
+    printf 'xdg_runtime_dir=%s\n' "${xdg_runtime_dir_value}"
+    ;;
+  *)
+    echo "Usage: jrmc-sunshine-session-env {exports|status}" >&2
+    exit 1
+    ;;
+esac
+EOF
+chmod +x /usr/local/bin/jrmc-sunshine-session-env
+
 cat <<'EOF' >/usr/local/bin/jrmc-sunshine-launch
 #!/usr/bin/env bash
 set -euo pipefail
@@ -367,8 +432,7 @@ source /etc/default/jrmc
 
 export HOME="${JRMC_HOME}"
 export USER="${JRMC_USER}"
-export DISPLAY=":${JRMC_SUNSHINE_DISPLAY}"
-export XAUTHORITY="${JRMC_SUNSHINE_XAUTHORITY}"
+eval "$(/usr/local/bin/jrmc-sunshine-session-env exports)"
 eval "$(/usr/local/bin/jrmc-scale-profile exports)"
 
 if /usr/local/bin/jrmc-pidfile-active "${JRMC_SUNSHINE_UI_PIDFILE}" >/dev/null 2>&1; then
@@ -381,9 +445,12 @@ for _i in $(seq 1 30); do
   sleep 0.5
 done
 
-/usr/local/bin/jrmc-openbox-start
 /usr/local/bin/jrmc-scale-profile apply-session >/dev/null 2>&1 || true
 /usr/local/bin/jrmc-app-scale sunshine >/dev/null 2>&1 || true
+
+if [[ "${JRMC_SUNSHINE_BACKEND_ACTIVE:-}" != "labwc-wlr" ]]; then
+  /usr/local/bin/jrmc-openbox-start
+fi
 
 cleanup() {
   rm -f "${JRMC_SUNSHINE_UI_PIDFILE}"
@@ -426,7 +493,9 @@ stop_pidfile "${JRMC_SUNSHINE_UI_PIDFILE}"
 stop_pidfile "${JRMC_SUNSHINE_SCALE_PIDFILE}"
 stop_pidfile "${JRMC_SUNSHINE_OPENBOX_PIDFILE}"
 stop_pidfile "${JRMC_SUNSHINE_PIDFILE}"
+stop_pidfile "${JRMC_SUNSHINE_LABWC_PIDFILE}"
 stop_pidfile "${JRMC_SUNSHINE_XORG_PIDFILE}"
+rm -f "${JRMC_SUNSHINE_SESSION_ENV_FILE}" "${JRMC_SUNSHINE_BACKEND_STATE_FILE}"
 EOF
 chmod +x /usr/local/bin/jrmc-stop-sunshine-session
 
@@ -445,6 +514,8 @@ preset_record() {
     1280x800) printf '%s\n' '1280x800|1280x800 - WXGA (16:10)|28.0-120.0|48.0-75.0|262144|220000' ;;
     1600x900) printf '%s\n' '1600x900|1600x900 - HD+ (16:9)|28.0-160.0|48.0-75.0|512000|280000' ;;
     1920x1080) printf '%s\n' '1920x1080|1920x1080 - Full HD (16:9)|28.0-200.0|48.0-75.0|512000|350000' ;;
+    2560x1440) printf '%s\n' '2560x1440|2560x1440 - QHD (16:9)|28.0-240.0|48.0-75.0|1048576|450000' ;;
+    3840x2160) printf '%s\n' '3840x2160|3840x2160 - 4K UHD (16:9)|28.0-330.0|48.0-75.0|1048576|650000' ;;
     *) return 1 ;;
   esac
 }
@@ -456,7 +527,9 @@ case "${action}" in
       1280x720 \
       1280x800 \
       1600x900 \
-      1920x1080; do
+      1920x1080 \
+      2560x1440 \
+      3840x2160; do
       IFS='|' read -r preset_token preset_label _rest <<<"$(preset_record "${token}")"
       printf '%s|%s\n' "${preset_token}" "${preset_label}"
     done
@@ -494,23 +567,39 @@ source /etc/default/jrmc
 
 adapter_name="$(awk -F= '/^[[:space:]]*adapter_name[[:space:]]*=/{sub(/^[[:space:]]+/, "", $2); sub(/[[:space:]]+$/, "", $2); print $2; exit}' "${JRMC_SUNSHINE_CONFIG_FILE}" 2>/dev/null || true)"
 configured_preset="$(/usr/local/bin/jrmc-sunshine-preset current 2>/dev/null || true)"
-active_resolution="$(runuser -u "${JRMC_USER}" -- env \
-  HOME="${JRMC_HOME}" \
-  USER="${JRMC_USER}" \
-  DISPLAY=":${JRMC_SUNSHINE_DISPLAY}" \
-  XAUTHORITY="${JRMC_SUNSHINE_XAUTHORITY}" \
-  xrandr --current 2>/dev/null | awk '/\*/{print $1; exit}' || true)"
+eval "$(/usr/local/bin/jrmc-sunshine-session-env exports 2>/dev/null || true)"
+if [[ "${JRMC_SUNSHINE_BACKEND_ACTIVE:-${JRMC_SUNSHINE_BACKEND:-labwc-wlr}}" == "labwc-wlr" ]]; then
+  active_resolution="$(runuser -u "${JRMC_USER}" -- env \
+    HOME="${JRMC_HOME}" \
+    USER="${JRMC_USER}" \
+    WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-${JRMC_SUNSHINE_WAYLAND_DISPLAY}}" \
+    XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}}" \
+    wlr-randr 2>/dev/null | awk '/current/{print $1; exit}' || true)"
+else
+  active_resolution="$(runuser -u "${JRMC_USER}" -- env \
+    HOME="${JRMC_HOME}" \
+    USER="${JRMC_USER}" \
+    DISPLAY="${DISPLAY:-:${JRMC_SUNSHINE_DISPLAY}}" \
+    XAUTHORITY="${XAUTHORITY:-${JRMC_SUNSHINE_XAUTHORITY}}" \
+    WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
+    XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}}" \
+    xrandr --current 2>/dev/null | awk '/\*/{print $1; exit}' || true)"
+fi
 
 echo "sunshine-service: $(systemctl is-active jrmc-sunshine.service 2>/dev/null || true)"
 echo "sunshine-config: ${JRMC_SUNSHINE_CONFIG_FILE}"
 echo "sunshine-apps: ${JRMC_SUNSHINE_APPS_FILE}"
-echo "sunshine-display: :${JRMC_SUNSHINE_DISPLAY}"
+echo "sunshine-backend: ${JRMC_SUNSHINE_BACKEND_ACTIVE:-${JRMC_SUNSHINE_BACKEND:-labwc-wlr}}"
+echo "sunshine-display: ${DISPLAY:-:${JRMC_SUNSHINE_DISPLAY}}"
+echo "sunshine-wayland-display: ${WAYLAND_DISPLAY:-${JRMC_SUNSHINE_WAYLAND_DISPLAY}}"
+echo "sunshine-capture: $(awk -F= '/^[[:space:]]*capture[[:space:]]*=/{sub(/^[[:space:]]+/, "", $2); sub(/[[:space:]]+$/, "", $2); print $2; exit}' "${JRMC_SUNSHINE_CONFIG_FILE}" 2>/dev/null || true)"
 echo "sunshine-preset: ${configured_preset:-custom:${JRMC_SUNSHINE_WIDTH:-1600}x${JRMC_SUNSHINE_HEIGHT:-900}}"
 echo "sunshine-resolution: ${JRMC_SUNSHINE_WIDTH:-1600}x${JRMC_SUNSHINE_HEIGHT:-900}"
 echo "sunshine-active-resolution: ${active_resolution:-unknown}"
 echo "sunshine-admin: https://$(hostname -I | awk '{print $1}'):${JRMC_SUNSHINE_WEB_PORT}/"
 echo "moonlight-host: $(hostname -I | awk '{print $1}')"
 echo "sunshine-pid: $(/usr/local/bin/jrmc-pidfile-active "${JRMC_SUNSHINE_PIDFILE}" 2>/dev/null || true)"
+echo "sunshine-labwc-pid: $(/usr/local/bin/jrmc-pidfile-active "${JRMC_SUNSHINE_LABWC_PIDFILE}" 2>/dev/null || true)"
 echo "sunshine-xorg-pid: $(/usr/local/bin/jrmc-pidfile-active "${JRMC_SUNSHINE_XORG_PIDFILE}" 2>/dev/null || true)"
 echo "sunshine-ui-pid: $(/usr/local/bin/jrmc-pidfile-active "${JRMC_SUNSHINE_UI_PIDFILE}" 2>/dev/null || true)"
 echo "sunshine-adapter: ${adapter_name:-auto}"
@@ -520,6 +609,70 @@ echo "uinput-present: $([[ -e /dev/uinput ]] && echo yes || echo no)"
 echo "uinput-jriver-rw: $(runuser -u "${JRMC_USER}" -- test -r /dev/uinput -a -w /dev/uinput && echo yes || echo no)"
 EOF
 chmod +x /usr/local/bin/jrmc-sunshine-status
+
+cat <<'EOF' >/usr/local/bin/jrmc-sunshine-labwc-session
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/default/jrmc
+
+env_file="${JRMC_SUNSHINE_SESSION_ENV_FILE}"
+scale_watch_pid=""
+
+cleanup() {
+  [[ -n "${scale_watch_pid}" ]] && kill "${scale_watch_pid}" >/dev/null 2>&1 || true
+  rm -f "${JRMC_SUNSHINE_SCALE_PIDFILE}" "${env_file}" "${JRMC_SUNSHINE_BACKEND_STATE_FILE}"
+}
+trap cleanup EXIT TERM INT
+
+output_name=""
+for _i in $(seq 1 40); do
+  output_name="$(wlr-randr 2>/dev/null | awk 'NF && $1 !~ /^[[:space:]]/ && $1 !~ /^-/ {print $1; exit}')"
+  if [[ -n "${output_name}" ]]; then
+    break
+  fi
+  sleep 0.5
+done
+
+if [[ -n "${output_name}" ]]; then
+  wlr-randr --output "${output_name}" --custom-mode "${JRMC_SUNSHINE_WIDTH}x${JRMC_SUNSHINE_HEIGHT}@60" >/dev/null 2>&1 || true
+fi
+
+for _i in $(seq 1 40); do
+  if [[ -n "${DISPLAY:-}" ]] && xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.5
+done
+
+cat <<ENV >"${env_file}"
+JRMC_SUNSHINE_BACKEND_ACTIVE="labwc-wlr"
+DISPLAY="${DISPLAY:-}"
+XAUTHORITY=""
+WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}"
+XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}}"
+ENV
+chmod 0600 "${env_file}"
+
+cat <<ENV >"${JRMC_SUNSHINE_BACKEND_STATE_FILE}"
+JRMC_SUNSHINE_BACKEND_ACTIVE="labwc-wlr"
+DISPLAY="${DISPLAY:-}"
+XAUTHORITY=""
+WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}"
+XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}}"
+ENV
+chmod 0600 "${JRMC_SUNSHINE_BACKEND_STATE_FILE}"
+
+/usr/local/bin/jrmc-scale-profile apply-session >/dev/null 2>&1 || true
+
+nohup /usr/local/bin/jrmc-scale-watch >/dev/null 2>&1 &
+scale_watch_pid=$!
+printf '%s\n' "${scale_watch_pid}" >"${JRMC_SUNSHINE_SCALE_PIDFILE}"
+
+while [[ -n "${LABWC_PID:-}" ]] && kill -0 "${LABWC_PID}" >/dev/null 2>&1; do
+  sleep 5
+done
+EOF
+chmod +x /usr/local/bin/jrmc-sunshine-labwc-session
 
 cat <<'EOF' >/usr/local/bin/jrmc-sunshine-configure-display
 #!/usr/bin/env bash
@@ -538,6 +691,46 @@ if (( width < 640 || width > 7680 || height < 480 || height > 4320 )); then
   echo "Sunshine resolution must stay within 640-7680 width and 480-4320 height." >&2
   exit 1
 fi
+
+mkdir -p "${JRMC_SUNSHINE_LABWC_CONFIG_DIR}" "${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}" /etc/X11
+
+cat <<CONFIG >"${JRMC_SUNSHINE_LABWC_RC_FILE}"
+<labwc_config>
+  <core>
+    <decoration>server</decoration>
+    <gap>0</gap>
+    <adaptiveSync>no</adaptiveSync>
+    <allowTearing>fullscreenForced</allowTearing>
+    <autoEnableOutputs>yes</autoEnableOutputs>
+    <reuseOutputMode>no</reuseOutputMode>
+    <xwaylandPersistence>yes</xwaylandPersistence>
+    <primarySelection>no</primarySelection>
+  </core>
+</labwc_config>
+CONFIG
+
+cat <<CONFIG >"${JRMC_SUNSHINE_LABWC_ENVIRONMENT_FILE}"
+XDG_CURRENT_DESKTOP=labwc:wlroots
+XDG_SESSION_TYPE=wayland
+XCURSOR_SIZE=24
+CONFIG
+
+cat <<'CONFIG' >"${JRMC_SUNSHINE_LABWC_XINITRC_FILE}"
+#!/bin/sh
+if [ -r "${HOME}/.Xresources" ] && command -v xrdb >/dev/null 2>&1; then
+  xrdb -merge "${HOME}/.Xresources"
+fi
+CONFIG
+chmod 0700 "${JRMC_SUNSHINE_LABWC_XINITRC_FILE}" >/dev/null 2>&1 || true
+
+cat <<CONFIG >"${JRMC_SUNSHINE_LABWC_AUTOSTART_FILE}"
+#!/bin/sh
+exec /usr/local/bin/jrmc-sunshine-labwc-session
+CONFIG
+chmod 0700 "${JRMC_SUNSHINE_LABWC_AUTOSTART_FILE}" >/dev/null 2>&1 || true
+
+chown -R "${JRMC_USER}:${JRMC_USER}" "${JRMC_SUNSHINE_LABWC_CONFIG_DIR}" "${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}" >/dev/null 2>&1 || true
+chmod 0700 "${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}" >/dev/null 2>&1 || true
 
 horizontal_sync="28.0-160.0"
 vertical_refresh="48.0-75.0"
@@ -560,7 +753,7 @@ for modeline_generator in cvt xcvt; do
 done
 
 if [[ -z "${modeline_output}" ]]; then
-  echo "Unable to generate an Xorg modeline for Sunshine resolution ${width}x${height}." >&2
+  echo "Unable to generate an Xorg fallback modeline for Sunshine resolution ${width}x${height}." >&2
   echo "Install cvt or xcvt support before starting Sunshine mode." >&2
   exit 1
 fi
@@ -569,11 +762,10 @@ mode_name="$(printf '%s\n' "${modeline_output}" | awk '{print $2}' | tr -d '"')"
 mode_body="$(printf '%s\n' "${modeline_output}" | sed -E 's/^Modeline[[:space:]]+"[^"]+"[[:space:]]+//')"
 
 if [[ -z "${mode_name}" || -z "${mode_body}" ]]; then
-  echo "Unable to parse the Xorg modeline for Sunshine resolution ${width}x${height}." >&2
+  echo "Unable to parse the Xorg fallback modeline for Sunshine resolution ${width}x${height}." >&2
   exit 1
 fi
 
-mkdir -p /etc/X11
 cat <<CONFIG >/etc/X11/jrmc-sunshine-xorg.conf
 Section "ServerFlags"
     Option "DontVTSwitch" "true"
@@ -648,29 +840,25 @@ if grep -Eq '^[[:space:]]*encoder[[:space:]]*=[[:space:]]*vaapi([[:space:]]*#.*)
   fi
 fi
 
-mkdir -p /tmp/.X11-unix
-install -d -m 700 -o "${JRMC_USER}" -g "${JRMC_USER}" "$(dirname "${JRMC_SUNSHINE_XAUTHORITY}")"
-install -m 600 -o "${JRMC_USER}" -g "${JRMC_USER}" /dev/null "${JRMC_SUNSHINE_XAUTHORITY}"
-rm -f "/tmp/.X${JRMC_SUNSHINE_DISPLAY}-lock" "/tmp/.X11-unix/X${JRMC_SUNSHINE_DISPLAY}"
-sunshine_cookie="$(mcookie)"
-for xauth_name in \
-  "${HOSTNAME}/unix:${JRMC_SUNSHINE_DISPLAY}" \
-  "unix:${JRMC_SUNSHINE_DISPLAY}" \
-  ":${JRMC_SUNSHINE_DISPLAY}"; do
-  xauth -f "${JRMC_SUNSHINE_XAUTHORITY}" add "${xauth_name}" . "${sunshine_cookie}" >/dev/null 2>&1 || true
-done
-
 cleanup() {
   /usr/local/bin/jrmc-stop-sunshine-session >/dev/null 2>&1 || true
 }
 trap cleanup EXIT TERM INT
 
 run_sunshine_user() {
+  local exports
+  exports="$({ /usr/local/bin/jrmc-sunshine-session-env exports 2>/dev/null; } || true)"
+  if [[ -n "${exports}" ]]; then
+    eval "${exports}"
+  fi
+
   runuser -u "${JRMC_USER}" -- env \
     HOME="${JRMC_HOME}" \
     USER="${JRMC_USER}" \
-    DISPLAY=":${JRMC_SUNSHINE_DISPLAY}" \
-    XAUTHORITY="${JRMC_SUNSHINE_XAUTHORITY}" \
+    DISPLAY="${DISPLAY:-:${JRMC_SUNSHINE_DISPLAY}}" \
+    XAUTHORITY="${XAUTHORITY-${JRMC_SUNSHINE_XAUTHORITY}}" \
+    WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
+    XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}}" \
     "$@"
 }
 
@@ -702,11 +890,109 @@ apply_sunshine_session_scale() {
   run_sunshine_user /usr/local/bin/jrmc-scale-profile apply-session >/dev/null 2>&1 || true
 }
 
+set_sunshine_capture_mode() {
+  local capture_mode="$1"
+
+  if grep -Eq '^[[:space:]]*capture[[:space:]]*=' "${JRMC_SUNSHINE_CONFIG_FILE}"; then
+    sed -i "s|^[[:space:]]*capture[[:space:]]*=.*$|capture = ${capture_mode}|" "${JRMC_SUNSHINE_CONFIG_FILE}"
+  else
+    printf 'capture = %s\n' "${capture_mode}" >>"${JRMC_SUNSHINE_CONFIG_FILE}"
+  fi
+
+  chown "${JRMC_USER}:${JRMC_USER}" "${JRMC_SUNSHINE_CONFIG_FILE}" >/dev/null 2>&1 || true
+  chmod 0600 "${JRMC_SUNSHINE_CONFIG_FILE}" >/dev/null 2>&1 || true
+}
+
 sunshine_input_devices_ready() {
   [[ -c /dev/input/event3 && -c /dev/input/event4 && -c /dev/input/event5 ]]
 }
 
+write_backend_state() {
+  local backend_name="$1"
+  local display_value="$2"
+  local xauthority_value="$3"
+  local wayland_display_value="$4"
+
+  cat <<ENV >"${JRMC_SUNSHINE_SESSION_ENV_FILE}"
+JRMC_SUNSHINE_BACKEND_ACTIVE="${backend_name}"
+DISPLAY="${display_value}"
+XAUTHORITY="${xauthority_value}"
+WAYLAND_DISPLAY="${wayland_display_value}"
+XDG_RUNTIME_DIR="${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}"
+ENV
+  chmod 0600 "${JRMC_SUNSHINE_SESSION_ENV_FILE}"
+
+  cat <<ENV >"${JRMC_SUNSHINE_BACKEND_STATE_FILE}"
+JRMC_SUNSHINE_BACKEND_ACTIVE="${backend_name}"
+DISPLAY="${display_value}"
+XAUTHORITY="${xauthority_value}"
+WAYLAND_DISPLAY="${wayland_display_value}"
+XDG_RUNTIME_DIR="${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}"
+ENV
+  chmod 0600 "${JRMC_SUNSHINE_BACKEND_STATE_FILE}"
+
+  JRMC_SUNSHINE_BACKEND_ACTIVE="${backend_name}"
+  DISPLAY="${display_value}"
+  XAUTHORITY="${xauthority_value}"
+  WAYLAND_DISPLAY="${wayland_display_value}"
+  XDG_RUNTIME_DIR="${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}"
+}
+
+start_sunshine_labwc() {
+  install -d -m 700 -o "${JRMC_USER}" -g "${JRMC_USER}" "${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}"
+  rm -f "${JRMC_SUNSHINE_SESSION_ENV_FILE}" "${JRMC_SUNSHINE_BACKEND_STATE_FILE}"
+  rm -f "${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}/${JRMC_SUNSHINE_WAYLAND_DISPLAY}"* >/dev/null 2>&1 || true
+
+  set_sunshine_capture_mode wlr
+
+  runuser -u "${JRMC_USER}" -- env \
+    HOME="${JRMC_HOME}" \
+    USER="${JRMC_USER}" \
+    XDG_RUNTIME_DIR="${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}" \
+    WLR_BACKENDS=headless,libinput \
+    WLR_LIBINPUT_NO_DEVICES=1 \
+    WLR_HEADLESS_OUTPUTS=1 \
+    LIBSEAT_BACKEND=noop \
+    XDG_CURRENT_DESKTOP=labwc:wlroots \
+    XDG_SESSION_TYPE=wayland \
+    labwc -C "${JRMC_SUNSHINE_LABWC_CONFIG_DIR}" >/tmp/jrmc-sunshine-labwc.log 2>&1 &
+  labwc_pid=$!
+  printf '%s\n' "${labwc_pid}" >"${JRMC_SUNSHINE_LABWC_PIDFILE}"
+
+  for _i in $(seq 1 40); do
+    if [[ -f "${JRMC_SUNSHINE_SESSION_ENV_FILE}" ]]; then
+      eval "$(/usr/local/bin/jrmc-sunshine-session-env exports)"
+      if [[ -n "${WAYLAND_DISPLAY:-}" && -S "${XDG_RUNTIME_DIR:-${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}}/${WAYLAND_DISPLAY}" ]]; then
+        return 0
+      fi
+    fi
+    if ! kill -0 "${labwc_pid}" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.5
+  done
+
+  kill -TERM "${labwc_pid}" >/dev/null 2>&1 || true
+  wait "${labwc_pid}" 2>/dev/null || true
+
+  return 1
+}
+
 start_sunshine_xorg() {
+  set_sunshine_capture_mode x11
+
+  mkdir -p /tmp/.X11-unix
+  install -d -m 700 -o "${JRMC_USER}" -g "${JRMC_USER}" "$(dirname "${JRMC_SUNSHINE_XAUTHORITY}")"
+  install -m 600 -o "${JRMC_USER}" -g "${JRMC_USER}" /dev/null "${JRMC_SUNSHINE_XAUTHORITY}"
+  rm -f "/tmp/.X${JRMC_SUNSHINE_DISPLAY}-lock" "/tmp/.X11-unix/X${JRMC_SUNSHINE_DISPLAY}"
+  sunshine_cookie="$(mcookie)"
+  for xauth_name in \
+    "${HOSTNAME}/unix:${JRMC_SUNSHINE_DISPLAY}" \
+    "unix:${JRMC_SUNSHINE_DISPLAY}" \
+    ":${JRMC_SUNSHINE_DISPLAY}"; do
+    xauth -f "${JRMC_SUNSHINE_XAUTHORITY}" add "${xauth_name}" . "${sunshine_cookie}" >/dev/null 2>&1 || true
+  done
+
   Xorg ":${JRMC_SUNSHINE_DISPLAY}" \
     -auth "${JRMC_SUNSHINE_XAUTHORITY}" \
     -config /etc/X11/jrmc-sunshine-xorg.conf \
@@ -720,6 +1006,8 @@ start_sunshine_xorg() {
   chmod 0600 "${JRMC_SUNSHINE_XAUTHORITY}" >/dev/null 2>&1 || true
 
   wait_for_sunshine_display || true
+
+  write_backend_state "xorg-dummy" ":${JRMC_SUNSHINE_DISPLAY}" "${JRMC_SUNSHINE_XAUTHORITY}" ""
 
   DISPLAY=":${JRMC_SUNSHINE_DISPLAY}" XAUTHORITY="${JRMC_SUNSHINE_XAUTHORITY}" xhost +SI:localuser:"${JRMC_USER}" >/dev/null 2>&1 || true
 }
@@ -758,20 +1046,22 @@ bounce_sunshine_display() {
 
 ensure_sunshine_udev_runtime
 
-start_sunshine_xorg
-start_sunshine_openbox
+if ! start_sunshine_labwc; then
+  rm -f "${JRMC_SUNSHINE_LABWC_PIDFILE}" "${JRMC_SUNSHINE_SESSION_ENV_FILE}" "${JRMC_SUNSHINE_BACKEND_STATE_FILE}"
+  start_sunshine_xorg
+  start_sunshine_openbox
+  apply_sunshine_session_scale
 
-apply_sunshine_session_scale
-
-run_sunshine_user /usr/local/bin/jrmc-scale-watch >/dev/null 2>&1 &
-scale_watch_pid=$!
-printf '%s\n' "${scale_watch_pid}" >"${JRMC_SUNSHINE_SCALE_PIDFILE}"
+  run_sunshine_user /usr/local/bin/jrmc-scale-watch >/dev/null 2>&1 &
+  scale_watch_pid=$!
+  printf '%s\n' "${scale_watch_pid}" >"${JRMC_SUNSHINE_SCALE_PIDFILE}"
+fi
 
 run_sunshine_user sunshine "${JRMC_SUNSHINE_CONFIG_FILE}" >/tmp/jrmc-sunshine.log 2>&1 &
 sunshine_pid=$!
 printf '%s\n' "${sunshine_pid}" >"${JRMC_SUNSHINE_PIDFILE}"
 
-if [[ -d /host-run-udev/data ]]; then
+if [[ -d /host-run-udev/data && "${JRMC_SUNSHINE_BACKEND_ACTIVE:-}" == "xorg-dummy" ]]; then
   for _i in $(seq 1 20); do
     if sunshine_input_devices_ready; then
       break
@@ -1116,11 +1406,18 @@ apply_shared_display_now() {
 
 apply_sunshine_display_now() {
   if systemctl is-active --quiet jrmc-sunshine.service; then
+    local exports
+    exports="$({ /usr/local/bin/jrmc-sunshine-session-env exports 2>/dev/null; } || true)"
+    if [[ -n "${exports}" ]]; then
+      eval "${exports}"
+    fi
     runuser -u "${JRMC_USER}" -- env \
       HOME="${JRMC_HOME}" \
       USER="${JRMC_USER}" \
-      DISPLAY=":${JRMC_SUNSHINE_DISPLAY}" \
-      XAUTHORITY="${JRMC_SUNSHINE_XAUTHORITY}" \
+      DISPLAY="${DISPLAY:-:${JRMC_SUNSHINE_DISPLAY}}" \
+      XAUTHORITY="${XAUTHORITY:-${JRMC_SUNSHINE_XAUTHORITY}}" \
+      WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
+      XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-${JRMC_SUNSHINE_WAYLAND_RUNTIME_DIR}}" \
       /usr/local/bin/jrmc-scale-profile apply-session >/dev/null 2>&1 || true
   fi
 }
@@ -2559,6 +2856,8 @@ allowed_sunshine_resolutions = {
   "1280x800",
   "1600x900",
   "1920x1080",
+  "2560x1440",
+  "3840x2160",
 }
 
 mapping = {
@@ -2596,7 +2895,7 @@ if action == "set-ui-scale":
 elif action == "set-sunshine-resolution":
   if sunshine_resolution:
     if sunshine_resolution not in allowed_sunshine_resolutions:
-      print("<html><body><h1>Invalid Sunshine preset</h1><p>Select one of the tested Sunshine resolutions from the list.</p><p><a href='/dashboard/'>Back</a></p></body></html>")
+      print("<html><body><h1>Invalid Sunshine preset</h1><p>Select one of the available Sunshine virtual display resolutions from the list.</p><p><a href='/dashboard/'>Back</a></p></body></html>")
       raise SystemExit(0)
     command = ["sudo", "/usr/local/bin/jrmc-scale", "set-sunshine-resolution", sunshine_resolution]
   else:
@@ -2711,7 +3010,7 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
   </div>
   <div class="card">
     <h2>Sunshine Mode</h2>
-    <p>Sunshine mode starts a Moonlight-compatible JRMC desktop on its own Xorg session with GPU-backed video encoding when GPU passthrough is available. Sunshine keeps a separate admin UI and pairing workflow from the Dashboard.</p>
+    <p>Sunshine mode starts a Moonlight-compatible JRMC desktop on its own virtual display backend with GPU-backed video encoding when GPU passthrough is available. Sunshine keeps a separate admin UI and pairing workflow from the Dashboard.</p>
     <div class="actions">
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=switch-sunshine">Start Sunshine Mode</a>
       <a class="alt" href="/cgi-bin/jrmc-control.py?action=sunshine-status">Sunshine Status</a>
@@ -2724,13 +3023,15 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
     <div class="stack">
       <form class="scale-form" method="post" action="/cgi-bin/jrmc-control.py">
         <input type="hidden" name="action" value="set-sunshine-resolution">
-        <label for="sunshine_resolution">Tested Sunshine desktop resolution</label>
+        <label for="sunshine_resolution">Sunshine virtual display resolution</label>
         <select id="sunshine_resolution" name="sunshine_resolution">
           <option value="1024x768">1024x768 — XGA</option>
           <option value="1280x720">1280x720 — HD</option>
           <option value="1280x800">1280x800 — WXGA</option>
           <option value="1600x900" selected>1600x900 — HD+</option>
           <option value="1920x1080">1920x1080 — Full HD</option>
+          <option value="2560x1440">2560x1440 — QHD</option>
+          <option value="3840x2160">3840x2160 — 4K UHD</option>
         </select>
         <button type="submit">Apply Sunshine Resolution</button>
       </form>
@@ -2738,8 +3039,8 @@ cat <<'EOF' >${WEB_ROOT}/dashboard/index.html
         <a class="alt" href="/cgi-bin/jrmc-control.py?action=sunshine-status">Sunshine Status</a>
       </div>
     </div>
-    <p>Sunshine exposes a fixed server-side desktop size to Moonlight. Choose one of these tested dummy-display presets when you want Moonlight to see a different desktop resolution.</p>
-    <p>Use Sunshine Status to confirm the configured preset and the active Xorg mode. If Sunshine mode is already active, applying a new preset restarts the Sunshine session so the new desktop size takes effect immediately.</p>
+    <p>Sunshine exposes a fixed server-side desktop size to Moonlight. Choose one of these curated virtual display resolutions when you want Moonlight to see a different desktop size.</p>
+    <p>Use Sunshine Status to confirm the configured preset, active backend, and active session size. If Sunshine mode is already active, applying a new preset restarts the Sunshine session so the new desktop size takes effect immediately.</p>
   </div>
   <div class="card">
     <h2>UI Scale</h2>
