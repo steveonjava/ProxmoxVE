@@ -1,0 +1,121 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "JRiver deploy x11vnc fix",
+			"type": "shell",
+			"command": "ssh",
+			"args": [
+				"-tt",
+				"-o",
+				"BatchMode=yes",
+				"-o",
+				"StrictHostKeyChecking=accept-new",
+				"pve9950",
+				"export TERM=xterm; set -e; pct stop 900 --skiplock 1 >/dev/null 2>&1 || true; pct destroy 900 --purge 1 >/dev/null 2>&1 || true; mode=userdefaults var_ctid=900 bash -c \"$(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/ct/jrivermediacenter.sh)\""
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "JRiver deploy sunshine gpu local",
+			"type": "shell",
+			"command": "ssh",
+			"args": [
+				"-tt",
+				"-o",
+				"BatchMode=yes",
+				"-o",
+				"StrictHostKeyChecking=accept-new",
+				"pve9950",
+				"export TERM=xterm; set -e; pct stop 900 --skiplock 1 >/dev/null 2>&1 || true; pct destroy 900 --purge 1 >/dev/null 2>&1 || true; mode=userdefaults var_gpu=yes var_ctid=900 bash -c \"$(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/ct/jrivermediacenter.sh)\""
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "JRiver deploy sunshine gpu main",
+			"type": "shell",
+			"command": "ssh",
+			"args": [
+				"-tt",
+				"-o",
+				"BatchMode=yes",
+				"-o",
+				"StrictHostKeyChecking=accept-new",
+				"pve9950",
+				"export TERM=xterm; set -e; pct stop 900 --skiplock 1 >/dev/null 2>&1 || true; pct destroy 900 --purge 1 >/dev/null 2>&1 || true; mode=userdefaults var_gpu=yes var_ctid=900 bash -c \"$(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/ct/jrivermediacenter.sh)\""
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "JRiver deploy sunshine gpu main",
+			"type": "shell",
+			"command": "ssh",
+			"args": [
+				"-tt",
+				"-o",
+				"BatchMode=yes",
+				"-o",
+				"StrictHostKeyChecking=accept-new",
+				"pve9950",
+				"export TERM=xterm; set -e; pct stop 900 --skiplock 1 >/dev/null 2>&1 || true; pct destroy 900 --purge 1 >/dev/null 2>&1 || true; mode=userdefaults var_gpu=yes var_ctid=900 bash -c \"$(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/ct/jrivermediacenter.sh)\""
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "JRiver deploy sunshine gpu main",
+			"type": "shell",
+			"command": "ssh",
+			"args": [
+				"-tt",
+				"-o",
+				"BatchMode=yes",
+				"-o",
+				"StrictHostKeyChecking=accept-new",
+				"pve9950",
+				"export TERM=xterm; set -e; pct stop 900 --skiplock 1 >/dev/null 2>&1 || true; pct destroy 900 --purge 1 >/dev/null 2>&1 || true; mode=userdefaults var_gpu=yes var_ctid=900 bash -c \"$(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/ct/jrivermediacenter.sh)\""
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "JRiver deploy sunshine gpu main",
+			"type": "shell",
+			"command": "ssh",
+			"args": [
+				"-tt",
+				"-o",
+				"BatchMode=yes",
+				"-o",
+				"StrictHostKeyChecking=accept-new",
+				"pve9950",
+				"export TERM=xterm; set -e; pct stop 900 --skiplock 1 >/dev/null 2>&1 || true; pct destroy 900 --purge 1 >/dev/null 2>&1 || true; mode=userdefaults var_gpu=yes var_ctid=900 bash -c \"$(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/ct/jrivermediacenter.sh)\""
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "JRiver deploy sunshine gpu main",
+			"type": "shell",
+			"command": "ssh",
+			"args": [
+				"-tt",
+				"-o",
+				"BatchMode=yes",
+				"-o",
+				"StrictHostKeyChecking=accept-new",
+				"pve9950",
+				"export TERM=xterm; set -e; pct stop 900 --skiplock 1 >/dev/null 2>&1 || true; pct destroy 900 --purge 1 >/dev/null 2>&1 || true; mode=userdefaults var_gpu=yes var_ctid=900 bash -c \"$(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/ct/jrivermediacenter.sh)\""
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}
