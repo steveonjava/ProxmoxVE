@@ -13,7 +13,7 @@
   "website": "https://www.jriver.com/",
   "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/jriver.webp",
   "config_path": "",
-  "description": "JRiver Media Center is a comprehensive media management application for audio, video, images, and television. This LXC runs MC35 on Debian 13 with browser-based noVNC access over HTTPS, native RDP, and GPU-backed Sunshine streaming for Moonlight clients, while Media Server mode runs by default for more fault-tolerant daily use.",
+  "description": "JRiver Media Center is a comprehensive media management application for audio, video, images, and television. This LXC runs MC35 on Debian 13 with browser-based noVNC access over HTTPS, while Media Server mode runs by default for more fault-tolerant daily use.",
   "install_methods": [
     {
       "type": "default",
@@ -45,15 +45,11 @@
       "type": "info"
     },
     {
-      "text": "Dashboard now exposes four primary modes: Media Server, VNC, RDP, and Sunshine. Choosing one mode cleanly tears down the others first so JRiver keeps one writable library owner.",
+      "text": "Dashboard now exposes three primary modes: Media Server, VNC, and RDP. Choosing one mode cleanly tears down the others first so JRiver keeps one writable library owner.",
       "type": "info"
     },
     {
-      "text": "VNC mode enables both browser noVNC and direct VNC on port 5900 at the same time against one shared JRMC session through one TurboVNC backend. After Dashboard sign-in, use the same Dashboard password when noVNC or a native VNC client prompts for VNC authentication.",
-      "type": "info"
-    },
-    {
-      "text": "Sunshine mode is intended for GPU-enabled installs. Switch into Sunshine from Dashboard first, then open Sunshine Status or Mode Status to reach Sunshine's admin UI on port 47990, create Sunshine's separate admin account, and pair Moonlight.",
+      "text": "VNC mode enables both browser noVNC and direct VNC on port 5900 at the same time against one shared JRMC session through one Xtigervnc backend. After Dashboard sign-in, use the same Dashboard password when noVNC or a native VNC client prompts for VNC authentication.",
       "type": "info"
     },
     {
@@ -81,7 +77,7 @@
       "type": "info"
     },
     {
-      "text": "Run `jrmc-configure` for local administration, `jrmc-mode` to switch between Media Server, VNC, RDP, and Sunshine modes, and `jrmc-activate /path/to/file.mjr` to import a license restore file.",
+      "text": "Run `jrmc-configure` for local administration, `jrmc-mode` to switch between Media Server and UI modes, and `jrmc-activate /path/to/file.mjr` to import a license restore file.",
       "type": "info"
     },
     {
