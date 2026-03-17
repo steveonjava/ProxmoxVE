@@ -10,18 +10,6 @@
     },
     "chat.tools.terminal.autoApprove": {
         "git commit": true,
-        "git push": true,
-        "/^bash -n /home/steve/Development/ProxmoxVE/install/jriver-install\\.sh && echo \"syntax OK\"$/": {
-            "approve": true,
-            "matchCommandLine": true
-        },
-        "/^bash -n install/jrivermediacenter-install\\.sh$/": {
-            "approve": true,
-            "matchCommandLine": true
-        },
-        "/^bash -n install/jrivermediacenter-install\\.sh && bash -n ct/jrivermediacenter\\.sh$/": {
-            "approve": true,
-            "matchCommandLine": true
-        }
+        "git push": true
     }
 }
