@@ -35,7 +35,7 @@ msg_ok "Created hermes user"
 
 msg_info "Installing Hermes Agent"
 sudo -u hermes bash -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup'
-sudo -u hermes bash -c 'source ~/.bashrc && hermes --version'
+sudo -u hermes /home/hermes/.local/bin/hermes --version
 msg_ok "Installed Hermes Agent"
 
 msg_info "Configuring systemd user service"
