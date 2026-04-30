@@ -24,8 +24,14 @@ chmod 0440 /etc/sudoers.d/hermes
 msg_ok "Created Service User"
 
 msg_info "Installing Hermes Agent"
-sudo -H -u hermes bash -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup'
-sudo -H -u hermes /home/hermes/.local/bin/hermes --version
+sudo -u hermes env \
+	HOME=/home/hermes \
+	USER=hermes \
+	LOGNAME=hermes \
+	HERMES_HOME=/home/hermes/.hermes \
+	bash -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup --hermes-home /home/hermes/.hermes --dir /home/hermes/.hermes/hermes-agent'
+chown -R hermes:hermes /home/hermes/.hermes /home/hermes/.local
+sudo -u hermes env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes --version
 msg_ok "Installed Hermes Agent"
 
 msg_info "Creating Service"
@@ -53,7 +59,7 @@ systemctl enable -q --now hermes-gateway
 msg_ok "Created Service"
 
 msg_info "Storing Version"
-sudo -H -u hermes /home/hermes/.local/bin/hermes --version | head -1 >/opt/hermes-agent_version.txt
+sudo -u hermes env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes --version | head -1 >/opt/hermes-agent_version.txt
 msg_ok "Stored Version"
 
 motd_ssh
