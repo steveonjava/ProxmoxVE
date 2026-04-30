@@ -34,7 +34,7 @@ chmod 440 /etc/sudoers.d/hermes
 msg_ok "Created hermes user"
 
 msg_info "Installing Hermes Agent"
-sudo -u hermes bash -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash'
+sudo -u hermes bash -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup'
 sudo -u hermes bash -c 'source ~/.bashrc && hermes --version'
 msg_ok "Installed Hermes Agent"
 
