@@ -63,9 +63,36 @@ chown -R hermes:hermes /home/hermes/.config/systemd
 chmod 700 /home/hermes/.config/systemd/user
 chmod 644 /home/hermes/.config/systemd/user/hermes-agent.service
 
-sudo -u hermes bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u hermes) systemctl --user daemon-reload'
-sudo -u hermes bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u hermes) systemctl --user enable hermes-agent'
-msg_ok "Configured systemd user service"
+if sudo -u hermes bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u hermes) systemctl --user daemon-reload' && \
+	sudo -u hermes bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u hermes) systemctl --user enable hermes-agent'; then
+	msg_ok "Configured systemd user service"
+else
+	msg_warn "User systemd not available in container, falling back to system service"
+
+	cat >/etc/systemd/system/hermes-agent.service <<'EOF'
+[Unit]
+Description=Hermes Agent Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hermes
+Group=hermes
+WorkingDirectory=/home/hermes
+ExecStart=/home/hermes/.local/bin/hermes gateway
+Restart=on-failure
+RestartSec=5
+Environment=HOME=/home/hermes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+	systemctl daemon-reload
+	systemctl enable hermes-agent
+	msg_ok "Configured fallback system service"
+fi
 
 msg_info "Configuring SSH"
 sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
