@@ -8,12 +8,6 @@ source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
 color
 verb_ip6
 
-# In dev trace mode, shared helpers set PS4 to reference BASH_SOURCE.
-# Under bash -c with nounset, BASH_SOURCE can be unset and abort execution.
-if [[ "${DEV_MODE_TRACE:-false}" == "true" ]]; then
-	set +x
-fi
-
 catch_errors
 setting_up_container
 network_check
@@ -38,46 +32,8 @@ sudo -u hermes bash -c 'curl -fsSL https://hermes-agent.nousresearch.com/install
 sudo -u hermes /home/hermes/.local/bin/hermes --version
 msg_ok "Installed Hermes Agent"
 
-msg_info "Configuring systemd user service"
-loginctl enable-linger hermes 2>/dev/null || true
-mkdir -p /home/hermes/.config/systemd/user
-
-cat >/home/hermes/.config/systemd/user/hermes-agent.service <<'EOF'
-[Unit]
-Description=Hermes Agent Gateway
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-ExecStart=/home/hermes/.local/bin/hermes gateway
-Restart=on-failure
-RestartSec=5
-Environment=HOME=/home/hermes
-
-[Install]
-WantedBy=default.target
-EOF
-
-chown -R hermes:hermes /home/hermes/.config/systemd
-chmod 700 /home/hermes/.config/systemd/user
-chmod 644 /home/hermes/.config/systemd/user/hermes-agent.service
-
-# Probe whether user systemd is available — temporarily disable error trap
-set +e
-trap - ERR
-HERMES_UID=$(id -u hermes)
-sudo -u hermes bash -c "XDG_RUNTIME_DIR=/run/user/${HERMES_UID} systemctl --user daemon-reload" 2>/dev/null
-USER_SYSTEMD_RC=$?
-set -Eeuo pipefail
-trap 'error_handler' ERR
-
-if [[ $USER_SYSTEMD_RC -eq 0 ]]; then
-  sudo -u hermes bash -c "XDG_RUNTIME_DIR=/run/user/${HERMES_UID} systemctl --user enable hermes-agent"
-  msg_ok "Configured systemd user service"
-else
-  msg_warn "User systemd not available in container, falling back to system service"
-  cat >/etc/systemd/system/hermes-agent.service <<'EOF'
+msg_info "Configuring system service"
+cat >/etc/systemd/system/hermes-agent.service <<'EOF'
 [Unit]
 Description=Hermes Agent Gateway
 After=network-online.target
@@ -96,10 +52,9 @@ Environment=HOME=/home/hermes
 [Install]
 WantedBy=multi-user.target
 EOF
-  systemctl daemon-reload
-  systemctl enable hermes-agent
-  msg_ok "Configured system service (user systemd unavailable)"
-fi
+systemctl daemon-reload
+systemctl enable hermes-agent
+msg_ok "Configured system service"
 
 msg_info "Configuring SSH"
 sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
