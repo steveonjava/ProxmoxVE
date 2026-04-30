@@ -29,7 +29,7 @@ sudo -u hermes /home/hermes/.local/bin/hermes --version
 msg_ok "Installed Hermes Agent"
 
 msg_info "Creating Service"
-cat <<EOF >/etc/systemd/system/hermes-agent.service
+cat <<EOF >/etc/systemd/system/hermes-gateway.service
 [Unit]
 Description=Hermes Agent Gateway
 After=network-online.target
@@ -40,7 +40,7 @@ Type=simple
 User=hermes
 Group=hermes
 WorkingDirectory=/home/hermes
-ExecStart=/home/hermes/.local/bin/hermes gateway
+ExecStart=/home/hermes/.local/bin/hermes gateway run --replace
 Restart=on-failure
 RestartSec=5
 Environment=HOME=/home/hermes
@@ -48,7 +48,7 @@ Environment=HOME=/home/hermes
 [Install]
 WantedBy=multi-user.target
 EOF
-systemctl enable -q --now hermes-agent
+systemctl enable -q --now hermes-gateway
 msg_ok "Created Service"
 
 msg_info "Storing Version"
