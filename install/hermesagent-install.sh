@@ -45,7 +45,7 @@ Wants=network-online.target
 Type=simple
 User=hermes
 Group=hermes
-WorkingDirectory=/home/hermes/.hermes/hermes-agent
+WorkingDirectory=/home/hermes
 ExecStart=/home/hermes/.local/bin/hermes gateway run --replace
 Environment="HERMES_HOME=/home/hermes/.hermes"
 Environment="HOME=/home/hermes"
@@ -57,6 +57,15 @@ WantedBy=multi-user.target
 EOF
 systemctl enable -q --now hermes-gateway
 msg_ok "Created Service"
+
+msg_info "Creating Hermes Shim"
+cat <<'EOF' >/usr/bin/hermes
+#!/bin/bash
+cd /home/hermes
+exec runuser -u hermes -- /home/hermes/.local/bin/hermes "$@"
+EOF
+chmod +x /usr/bin/hermes
+msg_ok "Created Hermes Shim"
 
 msg_info "Storing Version"
 sudo -u hermes env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes --version | head -1 >/opt/hermes-agent_version.txt
