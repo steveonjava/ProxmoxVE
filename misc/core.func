@@ -187,7 +187,7 @@ set_std_mode() {
   # Enable bash tracing if trace mode active
   if [[ "${DEV_MODE_TRACE:-false}" == "true" ]]; then
     set -x
-    export PS4='+(${BASH_SOURCE:-/dev/stdin}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
+    export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
   fi
 }
 
