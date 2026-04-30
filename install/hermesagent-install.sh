@@ -39,7 +39,7 @@ sudo -u hermes /home/hermes/.local/bin/hermes --version
 msg_ok "Installed Hermes Agent"
 
 msg_info "Configuring systemd user service"
-loginctl enable-linger hermes
+loginctl enable-linger hermes 2>/dev/null || true
 mkdir -p /home/hermes/.config/systemd/user
 
 cat >/home/hermes/.config/systemd/user/hermes-agent.service <<'EOF'
@@ -63,13 +63,21 @@ chown -R hermes:hermes /home/hermes/.config/systemd
 chmod 700 /home/hermes/.config/systemd/user
 chmod 644 /home/hermes/.config/systemd/user/hermes-agent.service
 
-if sudo -u hermes bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u hermes) systemctl --user daemon-reload' && \
-	sudo -u hermes bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u hermes) systemctl --user enable hermes-agent'; then
-	msg_ok "Configured systemd user service"
-else
-	msg_warn "User systemd not available in container, falling back to system service"
+# Probe whether user systemd is available — temporarily disable error trap
+set +e
+trap - ERR
+HERMES_UID=$(id -u hermes)
+sudo -u hermes bash -c "XDG_RUNTIME_DIR=/run/user/${HERMES_UID} systemctl --user daemon-reload" 2>/dev/null
+USER_SYSTEMD_RC=$?
+set -Eeuo pipefail
+trap 'error_handler' ERR
 
-	cat >/etc/systemd/system/hermes-agent.service <<'EOF'
+if [[ $USER_SYSTEMD_RC -eq 0 ]]; then
+  sudo -u hermes bash -c "XDG_RUNTIME_DIR=/run/user/${HERMES_UID} systemctl --user enable hermes-agent"
+  msg_ok "Configured systemd user service"
+else
+  msg_warn "User systemd not available in container, falling back to system service"
+  cat >/etc/systemd/system/hermes-agent.service <<'EOF'
 [Unit]
 Description=Hermes Agent Gateway
 After=network-online.target
@@ -88,10 +96,9 @@ Environment=HOME=/home/hermes
 [Install]
 WantedBy=multi-user.target
 EOF
-
-	systemctl daemon-reload
-	systemctl enable hermes-agent
-	msg_ok "Configured fallback system service"
+  systemctl daemon-reload
+  systemctl enable hermes-agent
+  msg_ok "Configured system service (user systemd unavailable)"
 fi
 
 msg_info "Configuring SSH"
