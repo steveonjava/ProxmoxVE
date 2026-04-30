@@ -1,0 +1,48 @@
+{
+    "name": "Hermes Agent",
+    "slug": "hermes-agent",
+    "categories": [
+        1
+    ],
+    "date_created": "2026-04-30",
+    "type": "ct",
+    "updateable": true,
+    "privileged": false,
+    "interface_port": null,
+    "documentation": "https://hermes-agent.nousresearch.com/docs",
+    "website": "https://hermes-agent.nousresearch.com",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/hermes.webp",
+    "config_path": "/home/hermes/.hermes/",
+    "description": "Self-improving AI agent by Nous Research. Connects to 15+ LLM providers, executes terminal commands, browses the web, and learns from experience. Supports 16 messaging platforms (Telegram, Discord, Slack, WhatsApp, Signal, Matrix, and more) with persistent memory and autonomous skill creation.",
+    "install_methods": [
+        {
+            "type": "default",
+            "script": "ct/hermes-agent.sh",
+            "resources": {
+                "cpu": 2,
+                "ram": 4096,
+                "hdd": 20,
+                "os": "debian",
+                "version": "13"
+            }
+        }
+    ],
+    "default_credentials": {
+        "username": "hermes",
+        "password": null
+    },
+    "notes": [
+        {
+            "text": "After container startup, SSH in as the 'hermes' user and run 'hermes setup' to configure your LLM provider (OpenRouter, Anthropic, OpenAI, Nous Portal, or custom endpoint).",
+            "type": "info"
+        },
+        {
+            "text": "Start the gateway service with: systemctl --user start hermes-agent",
+            "type": "info"
+        },
+        {
+            "text": "Access the web dashboard with: hermes dashboard (tunnels port 5173 to localhost)",
+            "type": "info"
+        }
+    ]
+}
