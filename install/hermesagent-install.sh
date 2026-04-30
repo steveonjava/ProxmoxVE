@@ -7,6 +7,13 @@
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
 color
 verb_ip6
+
+# In dev trace mode, shared helpers set PS4 to reference BASH_SOURCE.
+# Under bash -c with nounset, BASH_SOURCE can be unset and abort execution.
+if [[ "${DEV_MODE_TRACE:-false}" == "true" ]]; then
+	set +x
+fi
+
 catch_errors
 setting_up_container
 network_check
