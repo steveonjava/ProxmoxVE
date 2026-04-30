@@ -29,7 +29,7 @@ sudo -u hermes /home/hermes/.local/bin/hermes --version
 msg_ok "Installed Hermes Agent"
 
 msg_info "Creating Service"
-cat >/etc/systemd/system/hermes-agent.service <<'EOF'
+cat <<EOF >/etc/systemd/system/hermes-agent.service
 [Unit]
 Description=Hermes Agent Gateway
 After=network-online.target
