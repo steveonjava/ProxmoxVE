@@ -10,7 +10,11 @@ verb_ip6
 catch_errors
 setting_up_container
 network_check
-update_os
+
+msg_info "Updating OS"
+$STD apt-get update
+$STD apt-get -y upgrade
+msg_ok "Updated OS"
 
 msg_info "Installing dependencies"
 $STD apt-get install -y git curl ca-certificates sudo
