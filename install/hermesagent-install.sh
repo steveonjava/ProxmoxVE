@@ -76,10 +76,6 @@ EOF
 chmod +x /usr/bin/hermes
 msg_ok "Created Hermes Shim"
 
-msg_info "Storing Version"
-runuser -u hermes -- env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes --version | head -1 >/opt/hermes-agent_version.txt
-msg_ok "Stored Version"
-
 motd_ssh
 customize
 cleanup_lxc
