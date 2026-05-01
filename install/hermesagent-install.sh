@@ -36,7 +36,6 @@ fi
 chown -R hermes:hermes /home/hermes/.hermes /home/hermes/.local
 mkdir -p /home/hermes/.cache
 chown -R hermes:hermes /home/hermes/.cache
-runuser -u hermes -- env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes --version
 msg_ok "Installed Hermes Agent"
 
 msg_info "Creating Service"
