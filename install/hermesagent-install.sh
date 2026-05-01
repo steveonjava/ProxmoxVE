@@ -14,12 +14,6 @@ setting_up_container
 network_check
 update_os
 
-msg_info "Installing Dependencies"
-$STD apt install -y \
-	git \
-	curl
-msg_ok "Installed Dependencies"
-
 msg_info "Creating Service User"
 if ! id -u hermes >/dev/null 2>&1; then
 	useradd -m -s /bin/bash hermes
