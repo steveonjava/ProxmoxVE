@@ -29,10 +29,7 @@ function update_script() {
   $STD env \
     HOME=/home/hermes \
     HERMES_HOME=/home/hermes/.hermes \
-    PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     PLAYWRIGHT_BROWSERS_PATH=/home/hermes/.cache/ms-playwright \
-    DEBIAN_FRONTEND=noninteractive \
-    NEEDRESTART_MODE=a \
     /home/hermes/.local/bin/hermes update
   chown -R hermes:hermes /home/hermes/.hermes /home/hermes/.local
   if [[ -d /home/hermes/.cache ]]; then
