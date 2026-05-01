@@ -26,7 +26,6 @@ msg_info "Installing Hermes Agent"
 env \
 	HOME=/home/hermes \
 	PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-	HERMES_HOME=/home/hermes/.hermes \
 	bash -lc 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup --hermes-home /home/hermes/.hermes --dir /home/hermes/.hermes/hermes-agent'
 
 if [[ ! -x /home/hermes/.local/bin/hermes ]]; then
