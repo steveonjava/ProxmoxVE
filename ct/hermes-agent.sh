@@ -41,7 +41,6 @@ function update_script() {
   fi
   msg_info "Updating ${APP}"
   $STD runuser -u hermes -- env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes update
-  $STD runuser -u hermes -- env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes config migrate
   msg_ok "Updated ${APP}"
   msg_ok "Updated successfully!"
   exit
