@@ -41,7 +41,7 @@ start
 build_container
 description
 
-msg_ok "Completed Successfully!\n"
+msg_ok "Completed successfully!\n"
 echo -e "${CREATING}${GN}${APP} setup has been successfully initialized!${CL}"
 echo -e "${INFO}${YW} Connect via SSH and configure your LLM provider:${CL}"
 echo -e "${TAB}${GATEWAY}${BGN}ssh hermes@${IP}${CL}"
