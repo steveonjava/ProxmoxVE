@@ -18,13 +18,6 @@ msg_info "Creating Service User"
 if ! id -u hermes >/dev/null 2>&1; then
 	useradd -m -s /bin/bash hermes
 fi
-
-cat <<'EOF' >/etc/sudoers.d/hermes
-# Hermes Agent runtime allowlist for autonomous operations.
-Cmnd_Alias HERMES_AUTONOMOUS_CMDS = /usr/bin/systemctl *, /usr/bin/journalctl *, /usr/bin/reboot, /usr/sbin/reboot, /usr/bin/poweroff, /usr/sbin/poweroff, /usr/bin/shutdown, /usr/sbin/shutdown
-hermes ALL=(ALL) NOPASSWD: HERMES_AUTONOMOUS_CMDS
-EOF
-chmod 0440 /etc/sudoers.d/hermes
 msg_ok "Created Service User"
 
 msg_info "Installing Hermes Agent"
