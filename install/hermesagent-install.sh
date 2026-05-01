@@ -23,10 +23,10 @@ useradd -m -s /bin/bash hermes
 msg_ok "Created Service User"
 
 msg_info "Installing Hermes Agent"
-env \
+$STD env \
 	HOME=/home/hermes \
 	PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-	bash -lc 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup --hermes-home /home/hermes/.hermes --dir /home/hermes/.hermes/hermes-agent'
+	bash <(curl -fsSL https://hermes-agent.nousresearch.com/install.sh) --skip-setup --hermes-home /home/hermes/.hermes --dir /home/hermes/.hermes/hermes-agent
 
 if [[ ! -x /home/hermes/.local/bin/hermes ]]; then
 	msg_error "Hermes binary not found after installation"
