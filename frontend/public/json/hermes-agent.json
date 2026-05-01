@@ -33,6 +33,10 @@
   },
   "notes": [
     {
+      "text": "Warning: Hermes can execute terminal commands. Passwordless sudo is scoped to an allowlist for package and service management operations.",
+      "type": "warning"
+    },
+    {
       "text": "After container startup, SSH in as the 'hermes' user and run 'hermes setup' to configure your LLM provider (OpenRouter, Anthropic, OpenAI, Nous Portal, or custom endpoint).",
       "type": "info"
     },

@@ -25,6 +25,16 @@ function update_script() {
   check_container_storage
   check_container_resources
 
+  if ! id -u hermes >/dev/null 2>&1; then
+    msg_error "No ${APP} Service User Found!"
+    exit
+  fi
+
+  if [[ ! -x /home/hermes/.local/bin/hermes ]]; then
+    msg_error "No ${APP} Binary Found!"
+    exit
+  fi
+
   if [[ ! -d /home/hermes/.hermes/hermes-agent ]]; then
     msg_error "No ${APP} Installation Found!"
     exit
