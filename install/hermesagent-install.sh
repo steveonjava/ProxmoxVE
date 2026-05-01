@@ -27,7 +27,6 @@ env \
 	HOME=/home/hermes \
 	PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
 	HERMES_HOME=/home/hermes/.hermes \
-	PLAYWRIGHT_BROWSERS_PATH=/home/hermes/.cache/ms-playwright \
 	DEBIAN_FRONTEND=noninteractive \
 	NEEDRESTART_MODE=a \
 	bash -lc 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup --hermes-home /home/hermes/.hermes --dir /home/hermes/.hermes/hermes-agent'
