@@ -25,24 +25,20 @@ function update_script() {
   check_container_storage
   check_container_resources
 
-  if ! id -u hermes >/dev/null 2>&1; then
-    msg_error "No ${APP} Service User Found!"
-    exit
-  fi
-
-  if [[ ! -x /home/hermes/.local/bin/hermes ]]; then
-    msg_error "No ${APP} Binary Found!"
-    exit
-  fi
-
-  if [[ ! -d /home/hermes/.hermes/hermes-agent ]]; then
-    msg_error "No ${APP} Installation Found!"
-    exit
-  fi
   msg_info "Updating ${APP}"
-  $STD runuser -u hermes -- env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes update
+  $STD env \
+    HOME=/home/hermes \
+    HERMES_HOME=/home/hermes/.hermes \
+    PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PLAYWRIGHT_BROWSERS_PATH=/home/hermes/.cache/ms-playwright \
+    DEBIAN_FRONTEND=noninteractive \
+    NEEDRESTART_MODE=a \
+    /home/hermes/.local/bin/hermes update
+  chown -R hermes:hermes /home/hermes/.hermes /home/hermes/.local
+  if [[ -d /home/hermes/.cache ]]; then
+    chown -R hermes:hermes /home/hermes/.cache
+  fi
   msg_ok "Updated ${APP}"
-  msg_ok "Updated successfully!"
   exit
 }
 
