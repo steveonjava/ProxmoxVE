@@ -26,9 +26,7 @@ function update_script() {
   check_container_resources
 
   msg_info "Updating ${APP}"
-  if ! git config --global --get-all safe.directory | grep -Fxq /home/hermes/.hermes/hermes-agent; then
-    git config --global --add safe.directory /home/hermes/.hermes/hermes-agent
-  fi
+  git config --system --add safe.directory /home/hermes/.hermes/hermes-agent 2>/dev/null || true
   $STD env \
     HOME=/home/hermes \
     HERMES_HOME=/home/hermes/.hermes \
