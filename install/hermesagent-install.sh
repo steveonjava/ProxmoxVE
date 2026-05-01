@@ -17,13 +17,7 @@ update_os
 msg_info "Installing Dependencies"
 $STD apt install -y \
 	git \
-	ripgrep \
-	ffmpeg \
-	build-essential \
-	python3-dev \
-	libffi-dev \
-	nodejs \
-	npm
+	curl
 msg_ok "Installed Dependencies"
 
 msg_info "Creating Service User"
@@ -67,13 +61,6 @@ if [[ ! -x /home/hermes/.local/bin/hermes ]]; then
 	msg_error "Hermes binary not found after installation"
 	exit 1
 fi
-
-msg_info "Verifying Playwright Chromium Install"
-if ! find /home/hermes/.cache/ms-playwright -maxdepth 1 -type d \( -name 'chromium-*' -o -name 'chromium_headless_shell-*' \) | grep -q .; then
-	msg_error "Playwright Chromium install did not produce expected browser artifacts"
-	exit 1
-fi
-msg_ok "Verified Playwright Chromium Install"
 
 chown -R hermes:hermes /home/hermes/.cache /home/hermes/.hermes /home/hermes/.local
 runuser -u hermes -- env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes --version
