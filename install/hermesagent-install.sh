@@ -37,8 +37,9 @@ echo -e "${TAB3}Deploy only in trusted admin-controlled environments."
 
 cat <<'EOF' >/etc/sudoers.d/hermes
 # Hermes Agent runtime allowlist for autonomous operations.
+Defaults:hermes env_keep += "DEBIAN_FRONTEND NEEDRESTART_MODE"
 Cmnd_Alias HERMES_AUTONOMOUS_CMDS = /usr/bin/apt *, /usr/bin/apt-get *, /usr/bin/dpkg *, /usr/bin/systemctl *, /usr/bin/journalctl *, /usr/bin/reboot, /usr/sbin/reboot, /usr/bin/poweroff, /usr/sbin/poweroff, /usr/bin/shutdown, /usr/sbin/shutdown
-hermes ALL=(ALL) NOPASSWD: HERMES_AUTONOMOUS_CMDS
+hermes ALL=(ALL) NOPASSWD: SETENV: HERMES_AUTONOMOUS_CMDS
 EOF
 chmod 0440 /etc/sudoers.d/hermes
 msg_ok "Created Service User"
