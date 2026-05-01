@@ -23,6 +23,12 @@ if ! id -u hermes >/dev/null 2>&1; then
 	useradd -m -s /bin/bash hermes
 fi
 
+if ! grep -qxF 'export PATH="$HOME/.local/bin:$PATH"' /home/hermes/.profile 2>/dev/null; then
+	echo 'export PATH="$HOME/.local/bin:$PATH"' >>/home/hermes/.profile
+fi
+
+chown hermes:hermes /home/hermes/.profile
+
 echo -e "${TAB3}┌─────────────────────────────────────────────────────────────────────────┐"
 echo -e "${TAB3}│                        HERMES PRIVILEGE NOTICE                         │"
 echo -e "${TAB3}└─────────────────────────────────────────────────────────────────────────┘"
@@ -42,6 +48,7 @@ runuser -u hermes -- env \
 	HOME=/home/hermes \
 	USER=hermes \
 	LOGNAME=hermes \
+	PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
 	HERMES_HOME=/home/hermes/.hermes \
 	bash -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup --hermes-home /home/hermes/.hermes --dir /home/hermes/.hermes/hermes-agent'
 
