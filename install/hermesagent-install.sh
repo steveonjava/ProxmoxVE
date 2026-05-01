@@ -14,6 +14,10 @@ setting_up_container
 network_check
 update_os
 
+msg_info "Installing Dependencies"
+$STD apt install -y git
+msg_ok "Installed Dependencies"
+
 msg_info "Creating Service User"
 useradd -m -s /bin/bash hermes
 msg_ok "Created Service User"
