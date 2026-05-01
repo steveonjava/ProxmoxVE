@@ -26,10 +26,6 @@ $STD apt install -y \
 	npm
 msg_ok "Installed Dependencies"
 
-msg_info "Installing Playwright Chromium Dependencies"
-npx --yes playwright@latest install --with-deps chromium
-msg_ok "Installed Playwright Chromium Dependencies"
-
 msg_info "Creating Service User"
 if ! id -u hermes >/dev/null 2>&1; then
 	useradd -m -s /bin/bash hermes
@@ -39,7 +35,9 @@ if ! grep -qxF 'export PATH="$HOME/.local/bin:$PATH"' /home/hermes/.profile 2>/d
 	echo 'export PATH="$HOME/.local/bin:$PATH"' >>/home/hermes/.profile
 fi
 
+mkdir -p /home/hermes/.cache/ms-playwright
 chown hermes:hermes /home/hermes/.profile
+chown -R hermes:hermes /home/hermes/.cache
 
 echo -e "${TAB3}┌─────────────────────────────────────────────────────────────────────────┐"
 echo -e "${TAB3}│                        HERMES PRIVILEGE NOTICE                         │"
@@ -62,6 +60,7 @@ runuser -u hermes -- env \
 	LOGNAME=hermes \
 	PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
 	HERMES_HOME=/home/hermes/.hermes \
+	PLAYWRIGHT_BROWSERS_PATH=/home/hermes/.cache/ms-playwright \
 	bash -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup --hermes-home /home/hermes/.hermes --dir /home/hermes/.hermes/hermes-agent'
 
 if [[ ! -x /home/hermes/.local/bin/hermes ]]; then
@@ -69,7 +68,21 @@ if [[ ! -x /home/hermes/.local/bin/hermes ]]; then
 	exit 1
 fi
 
-chown -R hermes:hermes /home/hermes/.hermes /home/hermes/.local
+msg_info "Verifying Playwright Chromium Install"
+env \
+	PLAYWRIGHT_BROWSERS_PATH=/home/hermes/.cache/ms-playwright \
+	HOME=/home/hermes \
+	DEBIAN_FRONTEND=noninteractive \
+	NEEDRESTART_MODE=a \
+	bash -lc 'cd /home/hermes/.hermes/hermes-agent && npx playwright install --with-deps chromium'
+
+if ! find /home/hermes/.cache/ms-playwright -maxdepth 1 -type d \( -name 'chromium-*' -o -name 'chromium_headless_shell-*' \) | grep -q .; then
+	msg_error "Playwright Chromium install did not produce expected browser artifacts"
+	exit 1
+fi
+msg_ok "Verified Playwright Chromium Install"
+
+chown -R hermes:hermes /home/hermes/.cache /home/hermes/.hermes /home/hermes/.local
 runuser -u hermes -- env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes --version
 msg_ok "Installed Hermes Agent"
 
