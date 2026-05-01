@@ -17,7 +17,7 @@
   "install_methods": [
     {
       "type": "default",
-      "script": "ct/hermes-agent.sh",
+      "script": "ct/hermesagent.sh",
       "resources": {
         "cpu": 2,
         "ram": 4096,
