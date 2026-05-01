@@ -23,7 +23,7 @@ useradd -m -s /bin/bash hermes
 msg_ok "Created Service User"
 
 msg_info "Installing Hermes Agent"
-$STD env \
+$STD setsid --wait env \
 	HOME=/home/hermes \
 	PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
 	bash <(curl -fsSL https://hermes-agent.nousresearch.com/install.sh) --skip-setup --hermes-home /home/hermes/.hermes --dir /home/hermes/.hermes/hermes-agent
