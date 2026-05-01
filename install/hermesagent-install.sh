@@ -54,14 +54,14 @@ chmod 0440 /etc/sudoers.d/hermes
 msg_ok "Created Service User"
 
 msg_info "Installing Hermes Agent"
-runuser -u hermes -- env \
+env \
 	HOME=/home/hermes \
-	USER=hermes \
-	LOGNAME=hermes \
 	PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
 	HERMES_HOME=/home/hermes/.hermes \
 	PLAYWRIGHT_BROWSERS_PATH=/home/hermes/.cache/ms-playwright \
-	bash -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup --hermes-home /home/hermes/.hermes --dir /home/hermes/.hermes/hermes-agent'
+	DEBIAN_FRONTEND=noninteractive \
+	NEEDRESTART_MODE=a \
+	bash -lc 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup --hermes-home /home/hermes/.hermes --dir /home/hermes/.hermes/hermes-agent'
 
 if [[ ! -x /home/hermes/.local/bin/hermes ]]; then
 	msg_error "Hermes binary not found after installation"
@@ -69,13 +69,6 @@ if [[ ! -x /home/hermes/.local/bin/hermes ]]; then
 fi
 
 msg_info "Verifying Playwright Chromium Install"
-env \
-	PLAYWRIGHT_BROWSERS_PATH=/home/hermes/.cache/ms-playwright \
-	HOME=/home/hermes \
-	DEBIAN_FRONTEND=noninteractive \
-	NEEDRESTART_MODE=a \
-	bash -lc 'cd /home/hermes/.hermes/hermes-agent && npx playwright install --with-deps chromium'
-
 if ! find /home/hermes/.cache/ms-playwright -maxdepth 1 -type d \( -name 'chromium-*' -o -name 'chromium_headless_shell-*' \) | grep -q .; then
 	msg_error "Playwright Chromium install did not produce expected browser artifacts"
 	exit 1
