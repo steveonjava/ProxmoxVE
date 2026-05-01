@@ -25,20 +25,6 @@ if ! id -u hermes >/dev/null 2>&1; then
 	useradd -m -s /bin/bash hermes
 fi
 
-if ! grep -qxF 'export PATH="$HOME/.local/bin:$PATH"' /home/hermes/.profile 2>/dev/null; then
-	echo 'export PATH="$HOME/.local/bin:$PATH"' >>/home/hermes/.profile
-fi
-
-mkdir -p /home/hermes/.cache/ms-playwright
-chown hermes:hermes /home/hermes/.profile
-chown -R hermes:hermes /home/hermes/.cache
-
-echo -e "${TAB3}┌─────────────────────────────────────────────────────────────────────────┐"
-echo -e "${TAB3}│                        HERMES PRIVILEGE NOTICE                         │"
-echo -e "${TAB3}└─────────────────────────────────────────────────────────────────────────┘"
-echo -e "${TAB3}Hermes can execute terminal commands and has scoped passwordless sudo."
-echo -e "${TAB3}Deploy only in trusted admin-controlled environments."
-
 cat <<'EOF' >/etc/sudoers.d/hermes
 # Hermes Agent runtime allowlist for autonomous operations.
 Cmnd_Alias HERMES_AUTONOMOUS_CMDS = /usr/bin/systemctl *, /usr/bin/journalctl *, /usr/bin/reboot, /usr/sbin/reboot, /usr/bin/poweroff, /usr/sbin/poweroff, /usr/bin/shutdown, /usr/sbin/shutdown
@@ -62,7 +48,10 @@ if [[ ! -x /home/hermes/.local/bin/hermes ]]; then
 	exit 1
 fi
 
-chown -R hermes:hermes /home/hermes/.cache /home/hermes/.hermes /home/hermes/.local
+chown -R hermes:hermes /home/hermes/.hermes /home/hermes/.local
+if [[ -d /home/hermes/.cache ]]; then
+	chown -R hermes:hermes /home/hermes/.cache
+fi
 runuser -u hermes -- env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes --version
 msg_ok "Installed Hermes Agent"
 
