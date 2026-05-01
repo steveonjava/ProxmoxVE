@@ -15,9 +15,7 @@ network_check
 update_os
 
 msg_info "Creating Service User"
-if ! id -u hermes >/dev/null 2>&1; then
-	useradd -m -s /bin/bash hermes
-fi
+useradd -m -s /bin/bash hermes
 msg_ok "Created Service User"
 
 msg_info "Installing Hermes Agent"
@@ -36,9 +34,8 @@ if [[ ! -x /home/hermes/.local/bin/hermes ]]; then
 fi
 
 chown -R hermes:hermes /home/hermes/.hermes /home/hermes/.local
-if [[ -d /home/hermes/.cache ]]; then
-	chown -R hermes:hermes /home/hermes/.cache
-fi
+mkdir -p /home/hermes/.cache
+chown -R hermes:hermes /home/hermes/.cache
 runuser -u hermes -- env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes --version
 msg_ok "Installed Hermes Agent"
 
