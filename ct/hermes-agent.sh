@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/build.func)
+source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVED/main/misc/build.func)
 
 # Copyright (c) 2021-2026 community-scripts ORG
-# License: MIT | https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
+# Author: Stephen Chin (steveonjava)
+# License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
 # Source: https://hermes-agent.nousresearch.com/
 
 APP="Hermes Agent"
@@ -29,8 +30,8 @@ function update_script() {
     exit
   fi
   msg_info "Updating ${APP}"
-  $STD sudo -u hermes /home/hermes/.local/bin/hermes update
-  $STD sudo -u hermes /home/hermes/.local/bin/hermes config migrate
+  $STD runuser -u hermes -- env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes update
+  $STD runuser -u hermes -- env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes config migrate
   msg_ok "Updated ${APP}"
   msg_ok "Updated successfully!"
   exit
@@ -40,7 +41,7 @@ start
 build_container
 description
 
-msg_ok "Completed successfully!\n"
+msg_ok "Completed Successfully!\n"
 echo -e "${CREATING}${GN}${APP} setup has been successfully initialized!${CL}"
 echo -e "${INFO}${YW} Connect via SSH and configure your LLM provider:${CL}"
 echo -e "${TAB}${GATEWAY}${BGN}ssh hermes@${IP}${CL}"

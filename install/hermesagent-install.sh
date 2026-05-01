@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 # Copyright (c) 2021-2026 community-scripts ORG
-# License: MIT | https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
+# Author: Stephen Chin (steveonjava)
+# License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
 # Source: https://hermes-agent.nousresearch.com/
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
@@ -14,7 +15,7 @@ network_check
 update_os
 
 msg_info "Installing Dependencies"
-$STD apt install -y git curl ca-certificates sudo
+$STD apt install -y git
 msg_ok "Installed Dependencies"
 
 msg_info "Creating Service User"
@@ -24,14 +25,14 @@ chmod 0440 /etc/sudoers.d/hermes
 msg_ok "Created Service User"
 
 msg_info "Installing Hermes Agent"
-sudo -u hermes env \
+runuser -u hermes -- env \
 	HOME=/home/hermes \
 	USER=hermes \
 	LOGNAME=hermes \
 	HERMES_HOME=/home/hermes/.hermes \
 	bash -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup --hermes-home /home/hermes/.hermes --dir /home/hermes/.hermes/hermes-agent'
 chown -R hermes:hermes /home/hermes/.hermes /home/hermes/.local
-sudo -u hermes env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes --version
+runuser -u hermes -- env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes --version
 msg_ok "Installed Hermes Agent"
 
 msg_info "Creating Service"
@@ -68,7 +69,7 @@ chmod +x /usr/bin/hermes
 msg_ok "Created Hermes Shim"
 
 msg_info "Storing Version"
-sudo -u hermes env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes --version | head -1 >/opt/hermes-agent_version.txt
+runuser -u hermes -- env HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /home/hermes/.local/bin/hermes --version | head -1 >/opt/hermes-agent_version.txt
 msg_ok "Stored Version"
 
 motd_ssh
