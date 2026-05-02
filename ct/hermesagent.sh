@@ -35,7 +35,6 @@ function update_script() {
   msg_ok "Stopped Service"
 
   msg_info "Updating ${APP}"
-  git config --system --add safe.directory /home/hermes/.hermes/hermes-agent 2>/dev/null || true
   $STD env \
     HOME=/home/hermes \
     HERMES_HOME=/home/hermes/.hermes \

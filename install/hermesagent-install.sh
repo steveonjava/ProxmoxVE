@@ -36,6 +36,7 @@ if [[ ! -x /home/hermes/.local/bin/hermes ]]; then
 fi
 
 chown -R hermes:hermes /home/hermes
+git config --system --add safe.directory /home/hermes/.hermes/hermes-agent 2>/dev/null || true
 msg_ok "Installed Hermes Agent"
 
 msg_info "Installing Web Dashboard"

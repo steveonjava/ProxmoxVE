@@ -12,7 +12,7 @@
   "documentation": "https://hermes-agent.nousresearch.com/docs",
   "website": "https://hermes-agent.nousresearch.com",
   "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/hermes.webp",
-  "config_path": "/home/hermes/.hermes",
+  "config_path": "/home/hermes/.hermes/.env",
   "description": "Self-improving AI agent by Nous Research. Connects to 15+ LLM providers, executes terminal commands, browses the web, and learns from experience. Supports 16 messaging platforms (Telegram, Discord, Slack, WhatsApp, Signal, Matrix, and more) with persistent memory and autonomous skill creation.",
   "install_methods": [
     {
