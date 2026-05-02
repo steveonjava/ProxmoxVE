@@ -2,7 +2,7 @@
 
 # Copyright (c) 2021-2026 tteck
 # Author: tteck (tteckster)
-# License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
+# License: MIT | https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
 # Source: https://tailscale.com/ | Github: https://github.com/tailscale/tailscale
 
 set -Eeuo pipefail
@@ -25,7 +25,7 @@ function msg_ok() { echo -e " \e[1;32m✔\e[0m $1"; }
 function msg_error() { echo -e " \e[1;31m✖\e[0m $1"; }
 
 # Telemetry
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/api.func) 2>/dev/null || true
+source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/api.func) 2>/dev/null || true
 declare -f init_tool_telemetry &>/dev/null && init_tool_telemetry "add-tailscale-lxc" "addon"
 
 header_info

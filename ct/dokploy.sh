@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
+source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/build.func)
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: MickLesk (CanbiZ)
-# License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
+# License: MIT | https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
 # Source: https://dokploy.com/
 
 APP="Dokploy"
@@ -19,7 +19,7 @@ variables
 color
 catch_errors
 
-ADDON_SCRIPT="https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/dokploy.sh"
+ADDON_SCRIPT="https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/tools/addon/dokploy.sh"
 
 function update_script() {
   header_info
@@ -48,7 +48,7 @@ function update_script() {
   msg_info "Migrating update function"
   TMP_UPDATE=$(mktemp)
   cat <<'MIGRATION_EOF' >"$TMP_UPDATE"
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/dokploy.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/tools/addon/dokploy.sh)"
 MIGRATION_EOF
   mv "$TMP_UPDATE" /usr/bin/update
   chmod +x /usr/bin/update

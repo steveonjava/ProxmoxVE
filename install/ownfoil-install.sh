@@ -2,7 +2,7 @@
 
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: pajjski
-# License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
+# License: MIT | https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
 # Source: https://github.com/a1ex4/ownfoil
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"

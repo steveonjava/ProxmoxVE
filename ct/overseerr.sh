@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
+source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/build.func)
 # Copyright (c) 2021-2026 tteck
 # Author: tteck (tteckster)
-# License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
+# License: MIT | https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
 # Source: https://overseerr.dev/
 
 APP="Overseerr"
@@ -46,7 +46,7 @@ function update_script() {
     msg_info "Switching update script to Seerr"
     TMP_UPDATE=$(mktemp)
     cat <<'EOF' >"$TMP_UPDATE"
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/seerr.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/ct/seerr.sh)"
 EOF
     mv "$TMP_UPDATE" /usr/bin/update
     chmod +x /usr/bin/update

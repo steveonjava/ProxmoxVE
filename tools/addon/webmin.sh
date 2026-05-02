@@ -2,7 +2,7 @@
 
 # Copyright (c) 2021-2026 tteck
 # Author: tteck (tteckster)
-# License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
+# License: MIT | https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
 # Source: https://www.webmin.com/ | Github: https://github.com/webmin/webmin
 
 function header_info {
@@ -37,7 +37,7 @@ msg_ok() {
 }
 
 # Telemetry
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/api.func) 2>/dev/null || true
+source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/api.func) 2>/dev/null || true
 declare -f init_tool_telemetry &>/dev/null && init_tool_telemetry "webmin" "addon"
 
 header_info

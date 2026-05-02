@@ -2,7 +2,7 @@
 
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: MickLesk (Canbiz) | Co-Author: CrazyWolf13
-# License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
+# License: MIT | https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
 # Source: https://vikunja.io/ | Github: https://github.com/go-vikunja/vikunja
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"

@@ -2,17 +2,17 @@
 
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: MickLesk (CanbiZ)
-# License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
+# License: MIT | https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
 # Source: https://komo.do/ | Github: https://github.com/moghtech/komodo
 if ! command -v curl &>/dev/null; then
   printf "\r\e[2K%b" '\033[93m Setup Source \033[m' >&2
   apt-get update >/dev/null 2>&1 || apk update >/dev/null 2>&1
   apt-get install -y curl >/dev/null 2>&1 || apk add --no-cache curl >/dev/null 2>&1
 fi
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/core.func)
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/tools.func)
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/error_handler.func)
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/api.func) 2>/dev/null || true
+source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/core.func)
+source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/tools.func)
+source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/error_handler.func)
+source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/api.func) 2>/dev/null || true
 declare -f init_tool_telemetry &>/dev/null && init_tool_telemetry "komodo" "addon"
 
 # Enable error handling
@@ -48,7 +48,7 @@ function check_legacy_db() {
     msg_error "Detected outdated Komodo setup using SQLite or PostgreSQL (FerretDB v1)."
     echo -e "${YW}This configuration is no longer supported since Komodo v1.18.0.${CL}"
     echo -e "${YW}Please follow the migration guide:${CL}"
-    echo -e "${BGN}https://github.com/community-scripts/ProxmoxVE/discussions/5689${CL}\n"
+    echo -e "${BGN}https://github.com/steveonjava/ProxmoxVE/discussions/5689${CL}\n"
     exit 238
   fi
 }

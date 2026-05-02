@@ -3,7 +3,7 @@
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: jeroenzwart
 # License: MIT
-# https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
+# https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
 
 function header_info() {
   clear
@@ -24,7 +24,7 @@ GN=$(echo "\033[1;92m")
 CL=$(echo "\033[m")
 
 # Telemetry
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/api.func) 2>/dev/null || true
+source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/api.func) 2>/dev/null || true
 declare -f init_tool_telemetry &>/dev/null && init_tool_telemetry "execute-lxcs" "pve"
 
 header_info

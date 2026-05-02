@@ -1,6 +1,6 @@
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: michelroegl-brunner | MickLesk
-# License: MIT | https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/LICENSE
+# License: MIT | https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/LICENSE
 
 # ==============================================================================
 # API.FUNC - TELEMETRY & DIAGNOSTICS API
@@ -51,8 +51,8 @@ STATUS_TIMEOUT=10
 # - Dynamically detects which GitHub/Gitea repo the scripts were loaded from
 # - Inspects /proc/$$/cmdline and $0 to find the source URL
 # - Maps detected repo to one of three canonical values:
-#   * "ProxmoxVE"  — official community-scripts/ProxmoxVE (production)
-#   * "ProxmoxVED" — official community-scripts/ProxmoxVED (development)
+#   * "ProxmoxVE"  — official steveonjava/ProxmoxVE (production)
+#   * "ProxmoxVED" — official steveonjava/ProxmoxVED (development)
 #   * "external"   — any fork or unknown source
 # - Fallback: "ProxmoxVED" (CI sed transforms ProxmoxVED → ProxmoxVE on promotion)
 # - Sets and exports REPO_SOURCE global variable
@@ -91,8 +91,8 @@ detect_repo_source() {
 
   # Map detected owner/repo to canonical repo_source value
   case "$owner_repo" in
-  community-scripts/ProxmoxVE) REPO_SOURCE="ProxmoxVE" ;;
-  community-scripts/ProxmoxVED) REPO_SOURCE="ProxmoxVED" ;;
+  steveonjava/ProxmoxVE) REPO_SOURCE="ProxmoxVE" ;;
+  steveonjava/ProxmoxVED) REPO_SOURCE="ProxmoxVED" ;;
   "")
     # No URL detected — use hardcoded fallback
     # This value must match the repo: ProxmoxVE for production, ProxmoxVED for dev
