@@ -34,9 +34,7 @@ if [[ ! -x /home/hermes/.local/bin/hermes ]]; then
 	exit 1
 fi
 
-chown -R hermes:hermes /home/hermes/.hermes /home/hermes/.local
-mkdir -p /home/hermes/.cache
-chown -R hermes:hermes /home/hermes/.cache
+chown -R hermes:hermes /home/hermes
 msg_ok "Installed Hermes Agent"
 
 msg_info "Installing Web Dashboard"
@@ -46,10 +44,8 @@ $STD runuser -u hermes -- \
 msg_ok "Installed Web Dashboard"
 
 msg_info "Building Web Dashboard Frontend"
-mkdir -p /home/hermes/.npm
-chown -R hermes:hermes /home/hermes/.npm
 $STD runuser -u hermes -- \
-  env HOME=/home/hermes NODE_OPTIONS=--max-old-space-size=1024 \
+  env HOME=/home/hermes NODE_OPTIONS=--max-old-space-size=3072 \
   PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
   bash -c 'cd /home/hermes/.hermes/hermes-agent/web && npm install && npm run build'
 msg_ok "Built Web Dashboard Frontend"
