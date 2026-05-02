@@ -46,8 +46,11 @@ $STD runuser -u hermes -- \
 msg_ok "Installed Web Dashboard"
 
 msg_info "Building Web Dashboard Frontend"
+mkdir -p /home/hermes/.npm
+chown -R hermes:hermes /home/hermes/.npm
 $STD runuser -u hermes -- \
-  env HOME=/home/hermes PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  env HOME=/home/hermes NODE_OPTIONS=--max-old-space-size=1024 \
+  PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
   bash -c 'cd /home/hermes/.hermes/hermes-agent/web && npm install && npm run build'
 msg_ok "Built Web Dashboard Frontend"
 
