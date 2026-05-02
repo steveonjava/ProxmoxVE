@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
+source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/build.func)
 # Copyright (c) 2021-2026 community-scripts ORG
-# Author: Stephen Chin
+# Author: Stephen Chin (steveonjava)
 # License: MIT | https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
 # Source: https://github.com/ProtonMail/proton-bridge
-
-source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/build.func)
 
 APP="ProtonMail-Bridge"
 var_tags="${var_tags:-mail;proton}"

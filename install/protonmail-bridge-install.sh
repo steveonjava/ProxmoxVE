@@ -2,7 +2,7 @@
 
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: Stephen Chin (steveonjava)
-# License: MIT | https://github.com/steveonjava/ProxmoxVED/raw/main/LICENSE
+# License: MIT | https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
 # Source: https://github.com/ProtonMail/proton-bridge
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
@@ -25,7 +25,7 @@ msg_ok "Created Service User"
 fetch_and_deploy_gh_release "protonmail-bridge" "ProtonMail/proton-bridge" "binary"
 
 msg_info "Creating Services"
-cat <<EOF> /etc/systemd/system/protonmail-bridge.service
+cat <<EOF >/etc/systemd/system/protonmail-bridge.service
 [Unit]
 Description=Proton Mail Bridge (noninteractive)
 After=network-online.target
@@ -51,9 +51,7 @@ ProtectControlGroups=yes
 [Install]
 WantedBy=multi-user.target
 EOF
-
-# IMAP socket (LAN 143)
-cat <<'EOF' > /etc/systemd/system/protonmail-bridge-imap.socket
+cat <<'EOF' >/etc/systemd/system/protonmail-bridge-imap.socket
 [Unit]
 Description=Proton Mail Bridge IMAP Socket (143)
 ConditionPathExists=/home/protonbridge/.protonmailbridge-initialized
@@ -66,7 +64,7 @@ Service=protonmail-bridge-imap-proxy.service
 [Install]
 WantedBy=sockets.target
 EOF
-cat <<'EOF'>/etc/systemd/system/protonmail-bridge-imap-proxy.service
+cat <<'EOF' >/etc/systemd/system/protonmail-bridge-imap-proxy.service
 [Unit]
 Description=Proton Mail Bridge IMAP Proxy (143 -> 127.0.0.1:1143)
 After=protonmail-bridge.service
@@ -80,7 +78,7 @@ ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:1143
 NoNewPrivileges=yes
 PrivateTmp=yes
 EOF
-cat <<'EOF' > /etc/systemd/system/protonmail-bridge-smtp.socket
+cat <<'EOF' >/etc/systemd/system/protonmail-bridge-smtp.socket
 [Unit]
 Description=Proton Mail Bridge SMTP Socket (587)
 ConditionPathExists=/home/protonbridge/.protonmailbridge-initialized
@@ -93,7 +91,7 @@ Service=protonmail-bridge-smtp-proxy.service
 [Install]
 WantedBy=sockets.target
 EOF
-cat <<'EOF'>/etc/systemd/system/protonmail-bridge-smtp-proxy.service
+cat <<'EOF' >/etc/systemd/system/protonmail-bridge-smtp-proxy.service
 [Unit]
 Description=Proton Mail Bridge SMTP Proxy (587 -> 127.0.0.1:1025)
 After=protonmail-bridge.service
@@ -107,12 +105,11 @@ ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:1025
 NoNewPrivileges=yes
 PrivateTmp=yes
 EOF
-
 msg_ok "Created Services"
 
 msg_info "Creating Helper Commands"
 
-cat <<'EOF' > /usr/local/bin/protonmailbridge-configure
+cat <<'EOF' >/usr/local/bin/protonmailbridge-configure
 #!/usr/bin/env bash
 set -euo pipefail
 
