@@ -8,7 +8,7 @@
   "type": "ct",
   "updateable": true,
   "privileged": false,
-  "interface_port": null,
+  "interface_port": 8642,
   "documentation": "https://hermes-agent.nousresearch.com/docs",
   "website": "https://hermes-agent.nousresearch.com",
   "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/hermes.webp",
@@ -33,11 +33,11 @@
   },
   "notes": [
     {
-      "text": "Warning: Hermes can execute terminal commands. Passwordless sudo is scoped to an allowlist for package and service management operations.",
-      "type": "warning"
+      "text": "After container startup, SSH in as the 'hermes' user and run 'hermes setup' to configure your LLM provider (OpenRouter, Anthropic, OpenAI, Nous Portal, or custom endpoint).",
+      "type": "info"
     },
     {
-      "text": "After container startup, SSH in as the 'hermes' user and run 'hermes setup' to configure your LLM provider (OpenRouter, Anthropic, OpenAI, Nous Portal, or custom endpoint).",
+      "text": "The API server exposes an OpenAI-compatible endpoint on port 8642. Connect Open WebUI or any OpenAI-compatible frontend. Find the API key in /home/hermes/.hermes/.env",
       "type": "info"
     },
     {
@@ -45,7 +45,7 @@
       "type": "info"
     },
     {
-      "text": "Access the web dashboard with: hermes dashboard (tunnels port 5173 to localhost)",
+      "text": "Access the web dashboard via SSH tunnel: ssh -L 9119:localhost:9119 hermes@<IP>, then open http://localhost:9119",
       "type": "info"
     }
   ]

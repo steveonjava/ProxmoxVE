@@ -15,7 +15,9 @@ network_check
 update_os
 
 msg_info "Installing Dependencies"
-$STD apt install -y git
+$STD apt install -y \
+  git \
+  nodejs
 msg_ok "Installed Dependencies"
 
 useradd -m -s /bin/bash hermes
@@ -35,6 +37,23 @@ chown -R hermes:hermes /home/hermes/.hermes /home/hermes/.local
 mkdir -p /home/hermes/.cache
 chown -R hermes:hermes /home/hermes/.cache
 msg_ok "Installed Hermes Agent"
+
+msg_info "Installing Web Dashboard"
+$STD su -s /bin/bash hermes -c \
+  "HOME=/home/hermes /home/hermes/.hermes/hermes-agent/venv/bin/pip install --quiet 'hermes-agent[web,pty]'"
+msg_ok "Installed Web Dashboard"
+
+msg_info "Configuring API Server"
+API_SERVER_KEY=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | cut -c1-32)
+cat <<EOF >/home/hermes/.hermes/.env
+API_SERVER_ENABLED=true
+API_SERVER_HOST=0.0.0.0
+API_SERVER_PORT=8642
+API_SERVER_KEY=${API_SERVER_KEY}
+EOF
+chmod 600 /home/hermes/.hermes/.env
+chown hermes:hermes /home/hermes/.hermes/.env
+msg_ok "Configured API Server"
 
 msg_info "Creating Service"
 cat <<EOF >/etc/systemd/system/hermes-gateway.service
@@ -59,6 +78,30 @@ WantedBy=multi-user.target
 EOF
 systemctl enable -q --now hermes-gateway
 msg_ok "Created Service"
+
+msg_info "Creating Dashboard Service"
+cat <<EOF >/etc/systemd/system/hermes-dashboard.service
+[Unit]
+Description=Hermes Agent Web Dashboard
+After=network-online.target hermes-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hermes
+Group=hermes
+WorkingDirectory=/home/hermes
+ExecStart=/home/hermes/.local/bin/hermes dashboard --host 127.0.0.1 --port 9119 --no-open
+Environment="HERMES_HOME=/home/hermes/.hermes"
+Environment="HOME=/home/hermes"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable -q --now hermes-dashboard
+msg_ok "Created Dashboard Service"
 
 msg_info "Creating Hermes Shim"
 cat <<'EOF' >/usr/bin/hermes
