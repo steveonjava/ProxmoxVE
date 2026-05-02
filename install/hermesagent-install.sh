@@ -44,7 +44,7 @@ $STD runuser -u hermes -- \
 msg_ok "Installed Web Dashboard"
 
 msg_info "Building Web Dashboard Frontend"
-$STD runuser -u hermes -- \
+$STD setsid --wait runuser -u hermes -- \
   env HOME=/home/hermes NODE_OPTIONS=--max-old-space-size=3072 \
   PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
   bash -c 'cd /home/hermes/.hermes/hermes-agent/web && npm install && npm run build'
