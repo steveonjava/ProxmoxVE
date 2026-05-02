@@ -29,10 +29,10 @@ function update_script() {
     exit
   fi
 
-  msg_info "Stopping Service"
+  msg_info "Stopping Services"
   systemctl stop hermes-dashboard
   systemctl stop hermes-gateway
-  msg_ok "Stopped Service"
+  msg_ok "Stopped Services"
 
   msg_info "Updating ${APP}"
   $STD env \
@@ -42,10 +42,10 @@ function update_script() {
   chown -R hermes:hermes /home/hermes
   msg_ok "Updated ${APP}"
 
-  msg_info "Starting Service"
+  msg_info "Starting Services"
   systemctl start hermes-gateway
   systemctl start hermes-dashboard
-  msg_ok "Started Service"
+  msg_ok "Started Services"
   msg_ok "Updated successfully!"
   exit
 }
