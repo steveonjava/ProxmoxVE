@@ -17,7 +17,8 @@ update_os
 msg_info "Installing Dependencies"
 $STD apt install -y \
   git \
-  nodejs
+  nodejs \
+  npm
 msg_ok "Installed Dependencies"
 
 useradd -m -s /bin/bash hermes
@@ -43,6 +44,12 @@ $STD runuser -u hermes -- \
   env HOME=/home/hermes VIRTUAL_ENV=/home/hermes/.hermes/hermes-agent/venv \
   /home/hermes/.local/bin/uv pip install 'hermes-agent[web,pty]'
 msg_ok "Installed Web Dashboard"
+
+msg_info "Building Web Dashboard Frontend"
+$STD runuser -u hermes -- \
+  env HOME=/home/hermes PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  bash -c 'cd /home/hermes/.hermes/hermes-agent/web && npm install && npm run build'
+msg_ok "Built Web Dashboard Frontend"
 
 msg_info "Configuring API Server"
 API_SERVER_KEY=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | cut -c1-32)
