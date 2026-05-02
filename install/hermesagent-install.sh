@@ -53,6 +53,11 @@ API_SERVER_KEY=${API_SERVER_KEY}
 EOF
 chmod 600 /home/hermes/.hermes/.env
 chown hermes:hermes /home/hermes/.hermes/.env
+{
+  echo "Hermes Agent API Credentials"
+  echo "API Key: ${API_SERVER_KEY}"
+  echo "API URL: http://$(hostname -I | awk '{print $1}'):8642/v1"
+} >~/hermesagent.creds
 msg_ok "Configured API Server"
 
 msg_info "Creating Service"
