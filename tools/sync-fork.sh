@@ -104,7 +104,7 @@ APPLIED=0
 FAILED=0
 
 # File patterns that identify app-specific files
-APP_RE="hermesagent|hermes-agent|jrivermediacenter|jriver-media-center|jriver\.sh|jriver-install|jriver\.json|ct/headers/jriver$|sync-fork"
+APP_RE="hermesagent|hermes-agent|jrivermediacenter|jriver-media-center|protonmail-bridge|protonmailbridge|jriver\.sh|jriver-install|jriver\.json|ct/headers/jriver$|sync-fork"
 
 for HASH in $APP_COMMITS; do
     SHORT=$(git log --oneline -1 "$HASH" | cut -c1-72)
