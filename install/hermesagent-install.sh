@@ -8,7 +8,6 @@
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
 color
 verb_ip6
-
 catch_errors
 setting_up_container
 network_check
@@ -21,17 +20,19 @@ $STD apt install -y \
   npm
 msg_ok "Installed Dependencies"
 
+msg_info "Creating Hermes User"
 useradd -m -s /bin/bash hermes
+msg_ok "Created Hermes User"
 
 msg_info "Installing Hermes Agent"
 $STD setsid --wait env \
-	HOME=/home/hermes \
-	PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-	bash <(curl -fsSL https://hermes-agent.nousresearch.com/install.sh) --skip-setup --hermes-home /home/hermes/.hermes --dir /home/hermes/.hermes/hermes-agent
+  HOME=/home/hermes \
+  PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  bash <(curl -fsSL https://hermes-agent.nousresearch.com/install.sh) --skip-setup --hermes-home /home/hermes/.hermes --dir /home/hermes/.hermes/hermes-agent
 
 if [[ ! -x /home/hermes/.local/bin/hermes ]]; then
-	msg_error "Hermes binary not found after installation"
-	exit 1
+  msg_error "Hermes binary not found after installation"
+  exit 1
 fi
 
 chown -R hermes:hermes /home/hermes
