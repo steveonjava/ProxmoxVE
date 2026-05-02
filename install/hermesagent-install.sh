@@ -43,13 +43,6 @@ $STD runuser -u hermes -- \
   /home/hermes/.local/bin/uv pip install 'hermes-agent[web,pty]'
 msg_ok "Installed Web Dashboard"
 
-msg_info "Building Web Dashboard Frontend"
-$STD setsid --wait runuser -u hermes -- \
-  env HOME=/home/hermes NODE_OPTIONS=--max-old-space-size=3072 \
-  PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-  bash -c 'cd /home/hermes/.hermes/hermes-agent/web && npm install && npm run build'
-msg_ok "Built Web Dashboard Frontend"
-
 msg_info "Configuring API Server"
 API_SERVER_KEY=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | cut -c1-32)
 cat <<EOF >/home/hermes/.hermes/.env
@@ -101,6 +94,8 @@ WorkingDirectory=/home/hermes
 ExecStart=/home/hermes/.local/bin/hermes dashboard --host 127.0.0.1 --port 9119 --no-open
 Environment="HERMES_HOME=/home/hermes/.hermes"
 Environment="HOME=/home/hermes"
+Environment="PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="NODE_OPTIONS=--max-old-space-size=3072"
 Restart=on-failure
 RestartSec=5
 
