@@ -2,7 +2,7 @@
 
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: Stephen Chin (steveonjava)
-# License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
+# License: MIT | https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
 # Source: https://hermes-agent.nousresearch.com/
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
@@ -15,10 +15,10 @@ update_os
 
 msg_info "Installing Dependencies"
 $STD apt install -y \
-  git \
-  nodejs \
-  npm
+  git
 msg_ok "Installed Dependencies"
+
+NODE_VERSION="22" setup_nodejs
 
 msg_info "Creating Hermes User"
 useradd -m -s /bin/bash hermes
@@ -54,11 +54,6 @@ API_SERVER_KEY=${API_SERVER_KEY}
 EOF
 chmod 600 /home/hermes/.hermes/.env
 chown hermes:hermes /home/hermes/.hermes/.env
-{
-  echo "Hermes Agent API Credentials"
-  echo "API Key: ${API_SERVER_KEY}"
-  echo "API URL: http://$(hostname -I | awk '{print $1}'):8642/v1"
-} >~/hermesagent.creds
 msg_ok "Configured API Server"
 
 msg_info "Creating Service"

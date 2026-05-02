@@ -37,7 +37,7 @@
       "type": "info"
     },
     {
-      "text": "The API server exposes an OpenAI-compatible endpoint on port 8642. Connect Open WebUI or any OpenAI-compatible frontend. Find the API key in /home/hermes/.hermes/.env",
+      "text": "The API server exposes an OpenAI-compatible endpoint on port 8642. Connect Open WebUI or any OpenAI-compatible frontend. Run 'cat /home/hermes/.hermes/.env' to view the API key.",
       "type": "info"
     },
     {

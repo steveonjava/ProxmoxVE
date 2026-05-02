@@ -2,7 +2,7 @@
 source <(curl -fsSL https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main/misc/build.func)
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: Stephen Chin (steveonjava)
-# License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
+# License: MIT | https://github.com/steveonjava/ProxmoxVE/raw/main/LICENSE
 # Source: https://hermes-agent.nousresearch.com/
 
 APP="Hermes Agent"
@@ -62,8 +62,8 @@ echo -e "${TAB}${GATEWAY}${BGN}ssh hermes@${IP}${CL}"
 echo -e "${TAB}${BGN}hermes setup${CL}"
 echo -e "${INFO}${YW} API Server (OpenAI-compatible):${CL}"
 echo -e "${TAB}${GATEWAY}${BGN}http://${IP}:8642/v1${CL}"
-echo -e "${INFO}${YW} API credentials stored at:${CL}"
-echo -e "${TAB}${BGN}/root/hermesagent.creds${CL}"
+echo -e "${INFO}${YW} API key stored at:${CL}"
+echo -e "${TAB}${BGN}/home/hermes/.hermes/.env${CL}"
 echo -e "${INFO}${YW} Web Dashboard (via SSH tunnel):${CL}"
 echo -e "${TAB}${BGN}ssh -L 9119:localhost:9119 hermes@${IP}${CL}"
 echo -e "${TAB}${BGN}Then open: http://localhost:9119${CL}"
