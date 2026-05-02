@@ -39,8 +39,9 @@ chown -R hermes:hermes /home/hermes/.cache
 msg_ok "Installed Hermes Agent"
 
 msg_info "Installing Web Dashboard"
-$STD su -s /bin/bash hermes -c \
-  "HOME=/home/hermes /home/hermes/.hermes/hermes-agent/venv/bin/pip install --quiet 'hermes-agent[web,pty]'"
+$STD runuser -u hermes -- \
+  env HOME=/home/hermes VIRTUAL_ENV=/home/hermes/.hermes/hermes-agent/venv \
+  /home/hermes/.local/bin/uv pip install 'hermes-agent[web,pty]'
 msg_ok "Installed Web Dashboard"
 
 msg_info "Configuring API Server"
