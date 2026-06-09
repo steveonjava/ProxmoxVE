@@ -38,7 +38,7 @@ function update_script() {
 
   msg_info "Updating LiteLLM"
   $STD "$VENV_PATH/bin/python" -m pip install --upgrade litellm[proxy] prisma
-  $STD "$VENV_PATH/bin/prisma" generate
+  $STD "$VENV_PATH/bin/prisma" generate --schema "$VENV_PATH/lib/python3.13/site-packages/litellm_proxy_extras/schema.prisma"
   msg_ok "LiteLLM updated"
 
   msg_info "Updating DB Schema"
