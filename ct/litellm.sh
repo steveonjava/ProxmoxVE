@@ -35,10 +35,11 @@ function update_script() {
 
   VENV_PATH="/opt/litellm/.venv"
   PYTHON_VERSION="3.13" USE_UVX="YES" setup_uv
+  export PATH="$VENV_PATH/bin:$PATH"
 
   msg_info "Updating LiteLLM"
   $STD "$VENV_PATH/bin/python" -m pip install --upgrade litellm[proxy] prisma
-  $STD env PATH="$VENV_PATH/bin:$PATH" "$VENV_PATH/bin/prisma" generate --schema "$VENV_PATH/lib/python3.13/site-packages/litellm_proxy_extras/schema.prisma"
+  $STD "$VENV_PATH/bin/prisma" generate --schema "$VENV_PATH/lib/python3.13/site-packages/litellm_proxy_extras/schema.prisma"
   msg_ok "LiteLLM updated"
 
   msg_info "Updating DB Schema"

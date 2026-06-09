@@ -27,10 +27,11 @@ msg_info "Setting up Virtual Environment"
 mkdir -p /opt/litellm
 cd /opt/litellm
 $STD uv venv --clear /opt/litellm/.venv
+export PATH="/opt/litellm/.venv/bin:$PATH"
 $STD /opt/litellm/.venv/bin/python -m ensurepip --upgrade
 $STD /opt/litellm/.venv/bin/python -m pip install --upgrade pip
 $STD /opt/litellm/.venv/bin/python -m pip install litellm[proxy] prisma
-$STD env PATH="/opt/litellm/.venv/bin:$PATH" /opt/litellm/.venv/bin/prisma generate --schema /opt/litellm/.venv/lib/python3.13/site-packages/litellm_proxy_extras/schema.prisma
+$STD /opt/litellm/.venv/bin/prisma generate --schema /opt/litellm/.venv/lib/python3.13/site-packages/litellm_proxy_extras/schema.prisma
 msg_ok "Installed LiteLLM"
 
 msg_info "Configuring LiteLLM"
