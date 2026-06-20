@@ -12,7 +12,7 @@ var_ram="${var_ram:-4096}"
 var_disk="${var_disk:-5}"
 var_os="${var_os:-debian}"
 var_version="${var_version:-13}"
-var_arm64="${var_arm64:-no}"
+var_arm64="${var_arm64:-yes}"
 var_unprivileged="${var_unprivileged:-1}"
 
 header_info "$APP"
@@ -64,6 +64,7 @@ function update_script() {
     $STD poetry export -f requirements.txt --output requirements.txt --without-hashes
     $STD uv venv --clear
     $STD uv pip install -r requirements.txt
+    $STD uv pip install pytz
     msg_ok "Backend Updated"
 
     msg_info "Starting Service"

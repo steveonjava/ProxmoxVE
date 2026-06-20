@@ -12,7 +12,7 @@ var_ram="${var_ram:-1024}"
 var_disk="${var_disk:-2}"
 var_os="${var_os:-debian}"
 var_version="${var_version:-13}"
-var_arm64="${var_arm64:-no}"
+var_arm64="${var_arm64:-yes}"
 var_unprivileged="${var_unprivileged:-1}"
 
 header_info "$APP"
@@ -25,7 +25,7 @@ function update_script() {
   check_container_storage
   check_container_resources
 
-  NODE_VERSION="26" setup_nodejs
+  NODE_VERSION="24" setup_nodejs
   ensure_dependencies build-essential
 
   if command -v cross-seed &>/dev/null; then

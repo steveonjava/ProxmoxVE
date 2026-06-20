@@ -12,7 +12,7 @@ var_cpu="${var_cpu:-4}"
 var_ram="${var_ram:-4096}"
 var_os="${var_os:-debian}"
 var_version="${var_version:-13}"
-var_arm64="${var_arm64:-no}"
+var_arm64="${var_arm64:-yes}"
 var_unprivileged="${var_unprivileged:-1}"
 
 header_info "$APP"
@@ -29,7 +29,7 @@ function update_script() {
     exit
   fi
 
-  NODE_VERSION="24" NODE_MODULE="pnpm" setup_nodejs
+  NODE_VERSION="22" NODE_MODULE="pnpm" setup_nodejs
 
   msg_info "Updating FlowiseAI (this may take some time)"
   systemctl stop flowise
