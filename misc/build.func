@@ -3645,8 +3645,13 @@ run_addon_updates() {
   done
 }
 
-
 runtime_script_status_guard() {
+  # Skip status check when running from a fork (COMMUNITY_SCRIPTS_URL overridden)
+  local _default_url="https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main"
+  if [[ -n "${COMMUNITY_SCRIPTS_URL:-}" && "${COMMUNITY_SCRIPTS_URL}" != "$_default_url" ]]; then
+    return 0
+  fi
+
   local script_slug="${SCRIPT_SLUG:-${NSAPP:-}}"
   script_slug="$(echo "$script_slug" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')"
   [[ -z "$script_slug" ]] && return 0
@@ -5775,17 +5780,17 @@ create_lxc_container() {
   # Maps OS type + version to the release variant name used by ARM64 template sources.
   arm64_template_variant() {
     case "$1:$2" in
-      debian:12) echo "bookworm" ;;
-      debian:13) echo "trixie" ;;
-      debian:) echo "$DEBIAN_DEFAULT_CODENAME" ;;
+    debian:12) echo "bookworm" ;;
+    debian:13) echo "trixie" ;;
+    debian:) echo "$DEBIAN_DEFAULT_CODENAME" ;;
 
-      ubuntu:24.04) echo "noble" ;;
-      ubuntu:26.04) echo "questing" ;;
-      ubuntu:) echo "$UBUNTU_DEFAULT_CODENAME" ;;
+    ubuntu:24.04) echo "noble" ;;
+    ubuntu:26.04) echo "questing" ;;
+    ubuntu:) echo "$UBUNTU_DEFAULT_CODENAME" ;;
 
-      alpine:*) echo "${2:-$ALPINE_DEFAULT_VERSION}" ;;
+    alpine:*) echo "${2:-$ALPINE_DEFAULT_VERSION}" ;;
 
-      *) return 1 ;;
+    *) return 1 ;;
     esac
   }
 
