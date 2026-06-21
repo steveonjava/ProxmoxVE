@@ -58,7 +58,6 @@ function update_script() {
   exit
 }
 
-COMMUNITY_SCRIPTS_URL="https://raw.githubusercontent.com/steveonjava/ProxmoxVE/main"
 start
 build_container
 description
